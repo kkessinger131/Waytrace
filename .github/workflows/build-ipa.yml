@@ -10,7 +10,7 @@ env:
   # Change this to something unique to you BEFORE your first install
   # (e.g. com.yourname.waytrace), then never change it again: a different ID
   # installs as a separate app, and your recordings won't carry over.
-  BUNDLE_ID: com.example.waytrace
+  BUNDLE_ID: com.kkessinger131.waytrace
 
 jobs:
   build:
