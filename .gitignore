@@ -1,0 +1,11 @@
+build/
+DerivedData/
+Payload/
+*.ipa
+xcuserdata/
+.DS_Store
+
+# SwiftPM build output
+RoadKit/.build/
+RoadKit/.swiftpm/
+RoadKit/Package.resolved
