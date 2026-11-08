@@ -58,8 +58,10 @@
 		<key>PreciseTrack</key>
 		<string>Precise location is needed to record the exact path you travel.</string>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>For the photo map: Waytrace looks at when and where your photos and videos were taken during a recording, to put a marker on the map for each. The photos themselves aren't copied or sent anywhere.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Waytrace labels each point as walking, cycling or driving using motion data your iPhone already keeps.</string>
+	<string>Waytrace labels each point as walking, cycling or driving using motion data your iPhone already keeps, and uses it to rest the GPS while you stay in one place.</string>
 
 	<!-- Makes Documents (Tracks/ and Exports/) visible in the Files app. -->
 	<key>UIFileSharingEnabled</key>

@@ -11,25 +11,64 @@ env:
   # (e.g. com.yourname.waytrace), then never change it again: a different ID
   # installs as a separate app, and your recordings won't carry over.
   BUNDLE_ID: com.kkessinger131.waytrace
+  XCODE_CACHE_TAG: macos-26-xcode-26.6
 
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show Xcode version
         run: xcodebuild -version
 
-      # The road engine (RoadKit: the Swift port of road_to_kml.py) has its own test
-      # suite, a port of test_road_to_kml.py. It runs offline on the Mac runner.
+      # ---- road_to_kml.py, the Python original -----------------------------------------
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: road_to_kml/requirements.txt
+
+      - name: Install road_to_kml.py's packages
+        run: python -m pip install -r road_to_kml/requirements.txt
+
+      # Its own offline test suite (the browser-UI server tests need road_to_kml_ui.py,
+      # which isn't part of this repo).
+      - name: Test road_to_kml.py
+        working-directory: road_to_kml
+        run: python -m pytest -q test_road_to_kml.py -k "not UIServer"
+
+      # The same jobs through road_to_kml.py, for the Swift port to be compared with, and the
+      # alias answers recomputed with the current road_aliases.py.
+      - name: Run the cross-check jobs in Python
+        run: |
+          python road_to_kml/crosscheck.py "$RUNNER_TEMP/pyout"
+          python road_to_kml/make_alias_fixture.py RoadKit/Tests/RoadKitTests/Fixtures/aliases.zip "$RUNNER_TEMP/aliases.json"
+
+      # ---- RoadKit, the Swift port ---------------------------------------------------------
+      # GEOS takes several minutes to compile; keep the build between runs.
+      - name: Restore RoadKit build
+        uses: actions/cache@v6
+        with:
+          path: RoadKit/.build
+          key: roadkit-${{ env.XCODE_CACHE_TAG }}-${{ hashFiles('RoadKit/Package.resolved') }}-${{ hashFiles('RoadKit/Sources/**', 'RoadKit/Tests/**') }}
+          restore-keys: |
+            roadkit-${{ env.XCODE_CACHE_TAG }}-${{ hashFiles('RoadKit/Package.resolved') }}-
+
+      # The port of test_road_to_kml.py, plus the cross-check (same road surface as the
+      # Python for every job) and the alias parity test (~27,000 names).
       - name: Test RoadKit
         working-directory: RoadKit
+        env:
+          ROADKIT_PY_OUT: ${{ runner.temp }}/pyout
+          ROADKIT_ALIAS_FIXTURE: ${{ runner.temp }}/aliases.json
         run: |
           set -o pipefail
           swift test 2>&1 | tee ../roadkit-test.log
+          grep -A 20 "Cross-check against road_to_kml.py" ../roadkit-test.log || true
 
+      # ---- The app -------------------------------------------------------------------------
       # Only the app gets BUNDLE_ID. (Passing it to xcodebuild on the command line
       # would give it to the GEOS framework inside the app too, and iOS refuses to
       # install an app whose framework has the app's own ID.)
@@ -37,6 +76,42 @@ jobs:
         run: |
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = com.example.waytrace;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/" Waytrace.xcodeproj/project.pbxproj
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" Waytrace.xcodeproj/project.pbxproj
+
+      - name: Restore Xcode builds
+        uses: actions/cache@v6
+        with:
+          path: |
+            build
+            build-sim
+          key: xcode-${{ env.XCODE_CACHE_TAG }}-${{ hashFiles('RoadKit/Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            xcode-${{ env.XCODE_CACHE_TAG }}-${{ hashFiles('RoadKit/Package.resolved') }}-
+
+      # The app's own tests, on an iPhone simulator: the logic behind resting the GPS, photo
+      # placement, daily maps, signing expiry, run notifications, pacing and exports. They run
+      # inside the app, so this also checks that it launches.
+      - name: Test the app on a simulator
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in d if "iOS" in k), key=lambda k: [int(x) for x in k.split("iOS-")[-1].split("-")])
+          for rt in reversed(ios):
+              phones = [x for x in d[rt] if x["name"].startswith("iPhone")]
+              if phones:
+                  print(phones[0]["udid"]); break
+          ')
+          echo "Simulator: $UDID"
+          xcrun simctl list devices | grep "$UDID" || true
+          xcodebuild test \
+            -project Waytrace.xcodeproj \
+            -scheme Waytrace \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/build-sim" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee app-test.log | grep -E "^(Test Suite|Test Case|.*error:|\*\* )" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" app-test.log
 
       # Builds for a real iPhone without signing. Sideloadly signs it with your
       # Apple ID when it installs, so no certificates are needed here.
@@ -71,7 +146,7 @@ jobs:
           ls -lh Waytrace.ipa
 
       - name: Upload Waytrace.ipa
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Waytrace-ipa
           path: Waytrace.ipa
@@ -80,10 +155,11 @@ jobs:
       # If the build or tests fail, the logs are saved as a downloadable file.
       - name: Upload logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-log
           path: |
             build.log
+            app-test.log
             roadkit-test.log
           if-no-files-found: ignore

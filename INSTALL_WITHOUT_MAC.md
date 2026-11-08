@@ -31,19 +31,17 @@ account and your Apple ID.
 ## B. Get the app file
 
 1. Open the repository's **Actions** tab. Each commit starts a build, so one
-   is already running. Builds take about 10 to 15 minutes: the road engine's
-   tests run first, and the map geometry library (GEOS) is compiled from
-   source each time. To start one by hand, click
-   **Build Waytrace (.ipa)** › **Run workflow**.
+   is already running. Builds take about 15 to 25 minutes: the Python and
+   Swift road engines are tested and compared, the app's tests run on an
+   iPhone simulator, then the app is built. (The map geometry library, GEOS,
+   is kept between builds, so later ones are quicker.) To start one by hand,
+   click **Build Waytrace (.ipa)** › **Run workflow**.
 2. When the run shows a green tick, open it. Under **Artifacts**, download
    **Waytrace-ipa**. It downloads as a .zip; extract it to get
    **Waytrace.ipa**.
 
 If the run shows a red ✗, open it and download **build-log**, or copy the
-red error lines from the failed step, and send them to Claude. The road
-engine has been compiled and its tests pass, but the app's screens haven't
-been compiled for iPhone yet, so a first-build error or two is possible and
-quick to fix.
+red error lines from the failed step, and send them to Claude.
 
 ## C. Install with Sideloadly (once)
 
@@ -63,30 +61,30 @@ quick to fix.
 
 ## D. The weekly renewal
 
-With a free Apple ID, the app stops opening 7 days after it was signed. To
-renew it:
+With a free Apple ID, the app stops opening 7 days after it was signed.
+Waytrace sends a notification 24 hours before, and Settings shows the exact
+time. Reinstalling over the app keeps your recordings; deleting it erases them.
 
-- **Automatically:** tick Sideloadly's automatic refresh option when you
-  install. Its background helper then re-signs the app whenever the phone
-  connects to the PC, over USB or over Wi-Fi. For Wi-Fi, connect by USB once
-  and tick "Sync with this iPhone over Wi-Fi" in iTunes. The phone's screen
-  must be on and both devices on the same network.
-- **By hand:** drag the same Waytrace.ipa into Sideloadly again and click
-  Start.
+**Automatic refresh (set up once):**
 
-Re-signing reinstalls over the existing app, which normally keeps your
-recordings. Export anything important before renewing anyway; it takes a
-few seconds. A free Apple ID can have 3 sideloaded apps at once.
+1. **Wi-Fi sync.** Connect the iPhone by USB. In iTunes, click the phone icon,
+   tick **Sync with this iPhone over Wi-Fi** and click Apply. (With Apple's
+   newer *Apple Devices* app instead of iTunes: **Show this iPhone when on
+   Wi-Fi**.)
+2. **Start the daemon.** In Sideloadly, open **Advanced Options**, check that
+   **Anisette Usage** is "Sideloadly Fixed" or "Remote", and click the
+   **Sideloadly Daemon** button. An icon appears in the Windows tray.
+3. **Install with refresh on.** Drag in Waytrace.ipa, enter your Apple ID,
+   and in **Advanced Options** keep Signing Mode on **Apple ID Sideload** and
+   tick **Automatic Refresh via Sideloadly Daemon**. Then click Start as usual.
+4. **Check it.** Right-click the tray icon › **Show Daemon** lists the app and
+   the days it has left.
 
-A paid Apple Developer account ($99/year) makes each install last a year.
+From then on, whenever the PC is on, the daemon is running and the phone is on
+the same Wi-Fi (with any VPN off), the app is re-signed when about 2 days
+remain. If Waytrace's 24-hour warning arrives, the refresh hasn't happened:
+plug the phone in, or check that the PC is awake and the daemon is running.
 
-## E. Updating the app later
+**By hand:** drag the same Waytrace.ipa into Sideloadly again and click Start.
 
-1. Replace or edit files in the GitHub repository; each commit triggers a new
-   build.
-2. Download the new **Waytrace-ipa** artifact.
-3. Install it with Sideloadly exactly as before, keeping the same bundle ID so
-   your recordings carry over.
-
-Artifacts are kept for 90 days. Keep your current Waytrace.ipa on the PC for
-renewals.
+A free Apple ID can have 3 sideloaded apps at once.

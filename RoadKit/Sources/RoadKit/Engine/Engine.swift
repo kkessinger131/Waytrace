@@ -131,7 +131,10 @@ public final class RoadToKML: @unchecked Sendable {
 
     public func cancel() { cancelLock.lock(); _cancelled = true; cancelLock.unlock() }
 
-    func checkCancel() throws { if cancelled { throw CancelledError() } }
+    func checkCancel() throws {
+        Pacing.tick()
+        if cancelled { throw CancelledError() }
+    }
 
     /// time.sleep that stops early when the run is cancelled.
     func pause(_ seconds: Double) throws {
@@ -282,4 +285,13 @@ public final class HTTPClient: @unchecked Sendable {
         guard (200..<300).contains(r.status) else { throw NetError.http(r.status, HTTPClient.reason(r.status)) }
         return r.data
     }
+}
+
+/// Lets the app slow a run down while it's in the background. iOS ends a background app that
+/// keeps the CPU busy for too long (about 80% over a minute), so the app installs a hook that
+/// sleeps now and then; the engine calls it between pieces of work. Nothing is installed in
+/// the command-line port or in tests.
+public enum Pacing {
+    nonisolated(unsafe) public static var hook: (() -> Void)?
+    @inline(__always) static func tick() { hook?() }
 }

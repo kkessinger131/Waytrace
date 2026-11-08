@@ -89,21 +89,7 @@ enum Exporter {
             x.append("<Folder>")
             x.append("<name>\(xml(track.name))</name>")
 
-            let lines = Geo.segments(moving).filter { $0.count >= 2 }
-            if let first = moving.first, let last = moving.last, !lines.isEmpty {
-                x.append("<Placemark>")
-                x.append("<name>Track</name>")
-                x.append("<TimeSpan><begin>\(TimeFormats.utc.format(first.time))</begin><end>\(TimeFormats.utc.format(last.time))</end></TimeSpan>")
-                x.append("<styleUrl>#track</styleUrl>")
-                x.append("<MultiGeometry>")
-                for line in lines {
-                    x.append("<LineString><tessellate>1</tessellate><coordinates>")
-                    x.append(line.map(kmlCoordinate).joined(separator: " "))
-                    x.append("</coordinates></LineString>")
-                }
-                x.append("</MultiGeometry>")
-                x.append("</Placemark>")
-            }
+            x += trackLine(moving)
 
             let folders: [(String, [TrackPoint], Bool)] = [("Points", moving, true), ("Stationary (hidden)", still, false)]
             for (folderName, pts, visible) in folders where !pts.isEmpty {
@@ -120,6 +106,100 @@ enum Exporter {
         x.append("</Document>")
         x.append("</kml>")
         return x.joined(separator: "\n") + "\n"
+    }
+
+    /// The red line of a recording, broken at interruptions.
+    private static func trackLine(_ moving: [TrackPoint]) -> [String] {
+        var x: [String] = []
+        let lines = Geo.segments(moving).filter { $0.count >= 2 }
+        if let first = moving.first, let last = moving.last, !lines.isEmpty {
+            x.append("<Placemark>")
+            x.append("<name>Track</name>")
+            x.append("<TimeSpan><begin>\(TimeFormats.utc.format(first.time))</begin><end>\(TimeFormats.utc.format(last.time))</end></TimeSpan>")
+            x.append("<styleUrl>#track</styleUrl>")
+            x.append("<MultiGeometry>")
+            for line in lines {
+                x.append("<LineString><tessellate>1</tessellate><coordinates>")
+                x.append(line.map(kmlCoordinate).joined(separator: " "))
+                x.append("</coordinates></LineString>")
+            }
+            x.append("</MultiGeometry>")
+            x.append("</Placemark>")
+        }
+        return x
+    }
+
+    // MARK: - KML: the line plus a marker at every photo
+
+    /// The recording's line, and a camera marker wherever a photo or video was taken during
+    /// it. Photos with their own location go in one folder; photos without one, placed on the
+    /// line by the time they were taken, go in a second folder so they're easy to check.
+    static func photoKML(_ tracks: [ExportTrack], photos: [[PhotoMarker]], title: String) -> String {
+        let local = TimeFormats.local()
+        let clock = DateFormatter()
+        clock.locale = Locale(identifier: "en_US_POSIX")
+        clock.dateFormat = "HH:mm:ss"
+
+        var x: [String] = []
+        x.append(#"<?xml version="1.0" encoding="UTF-8"?>"#)
+        x.append(#"<kml xmlns="http://www.opengis.net/kml/2.2">"#)
+        x.append("<Document>")
+        x.append("<name>\(xml(title))</name>")
+        x.append(#"<Style id="track"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle></Style>"#)
+        x.append(#"<Style id="photo"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/camera.png</href></Icon></IconStyle></Style>"#)
+        x.append(#"<Style id="photoByTime"><IconStyle><color>ff00ccff</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/camera.png</href></Icon></IconStyle></Style>"#)
+        x.append(#"<Style id="video"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/movies.png</href></Icon></IconStyle></Style>"#)
+        x.append(#"<Style id="videoByTime"><IconStyle><color>ff00ccff</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/movies.png</href></Icon></IconStyle></Style>"#)
+
+        for (i, track) in tracks.enumerated() where !track.points.isEmpty {
+            let modes = recordsModes(track.points)
+            let moving = zip(track.points, modes).filter { $0.1 != "STILL" }.map { $0.0 }
+            let markers = i < photos.count ? photos[i] : []
+            x.append("<Folder>")
+            x.append("<name>\(xml(track.name))</name>")
+            x += trackLine(moving.isEmpty ? track.points : moving)
+            let own = markers.filter { $0.source == .photo }
+            let byTime = markers.filter { $0.source != .photo }
+            for (name, list) in [("Photos", own), ("Photos placed by time", byTime)] where !list.isEmpty {
+                x.append("<Folder>")
+                x.append("<name>\(name) (\(list.count))</name>")
+                for m in list { x.append(photoPlacemark(m, local: local, clock: clock)) }
+                x.append("</Folder>")
+            }
+            x.append("</Folder>")
+        }
+        x.append("</Document>")
+        x.append("</kml>")
+        return x.joined(separator: "\n") + "\n"
+    }
+
+    private static func photoPlacemark(_ m: PhotoMarker, local: Date.ISO8601FormatStyle, clock: DateFormatter) -> String {
+        let p = m.photo
+        let how: String
+        var data: [(String, String)] = [
+            ("file_name", p.fileName),
+            ("time_local", local.format(p.taken)),
+            ("time_utc", TimeFormats.utc.format(p.taken)),
+            ("latitude", String(format: "%.7f", m.latitude)),
+            ("longitude", String(format: "%.7f", m.longitude)),
+        ]
+        switch m.source {
+        case .photo:
+            how = "location from the \(p.isVideo ? "video" : "photo")"
+            data.append(("location_source", "photo"))
+        case .track(let gap):
+            how = gap < 1 ? "placed on the recording by time" : "placed on the recording by time (nearest point \(Int(gap.rounded())) s away)"
+            data.append(("location_source", "recording"))
+            data.append(("nearest_point_s", String(Int(gap.rounded()))))
+        }
+        let style = (p.isVideo ? "video" : "photo") + (m.source == .photo ? "" : "ByTime")
+        var s = "<Placemark><name>\(xml(p.fileName))</name>"
+        s += "<description>\(xml("Taken \(clock.string(from: p.taken)), \(how)."))</description>"
+        s += "<TimeStamp><when>\(TimeFormats.utc.format(p.taken))</when></TimeStamp>"
+        s += "<styleUrl>#\(style)</styleUrl><ExtendedData>"
+        for (key, value) in data { s += "<Data name=\"\(key)\"><value>\(xml(value))</value></Data>" }
+        s += String(format: "</ExtendedData><Point><coordinates>%.7f,%.7f</coordinates></Point></Placemark>", m.longitude, m.latitude)
+        return s
     }
 
     /// One point marker, with every recorded field as ExtendedData (shown in the balloon).

@@ -19,7 +19,12 @@ struct WaytraceApp: App {
             .preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { recorder.appBecameActive() }
+            if phase == .active {
+                recorder.appBecameActive()
+                Notifier.shared.askOnce()
+                Notifier.shared.scheduleSigningReminder()
+                DailyRoads.shared.kick()
+            }
         }
     }
 }
@@ -31,6 +36,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // for a significant-location-change event after it has terminated the app.
         // If a recording was in progress, it picks up exactly where it left off.
         LocationRecorder.shared.resumeIfNeeded()
+        Notifier.shared.attach()
+        Notifier.shared.scheduleSigningReminder()
+        _ = RoadJobs.shared            // installs the background pacing hook
         return true
     }
 }

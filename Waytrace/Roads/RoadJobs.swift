@@ -162,6 +162,10 @@ final class RoadJobs: ObservableObject {
     private var engine: RoadToKML?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let pending = PendingLines()
+    /// Slows the engine down while the app is in the background (see BackgroundPacer).
+    let pacer = BackgroundPacer()
+    private var onFinish: (@MainActor (RoadJob) -> Void)?
+    private var automatic = false
 
     private init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -175,6 +179,15 @@ final class RoadJobs: ObservableObject {
         statsURL = out.appendingPathComponent("overpass_mirror_stats.txt")
         _overpassURL = Published(initialValue: UserDefaults.standard.string(forKey: "roads.overpassURL") ?? "")
         refreshFiles()
+        let pacer = self.pacer
+        Pacing.hook = { pacer.tick() }
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            pacer.inBackground = true
+        }
+        nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
+            pacer.inBackground = false
+        }
     }
 
     var isRunning: Bool { current?.status == .running }
@@ -223,12 +236,16 @@ final class RoadJobs: ObservableObject {
         return url
     }
 
-    /// Start a run. Returns the job, or nil if one is already running.
+    /// Start a run. Returns the job, or nil if one is already running. `automatic` runs (the
+    /// daily road map) always notify when they finish; others only if you've left the app.
     @discardableResult
-    func run(_ argv: [String], label: String) -> RoadJob? {
+    func run(_ argv: [String], label: String, automatic: Bool = false,
+             onFinish: (@MainActor (RoadJob) -> Void)? = nil) -> RoadJob? {
         if isRunning { return nil }
         let job = RoadJob(label: label, argv: argv)
         current = job
+        self.onFinish = onFinish
+        self.automatic = automatic
 
         let http = HTTPClient()
         let engine = RoadToKML(services: .live(http: http), outputDirectory: outputDirectory, mirrorStatsPath: statsURL)
@@ -244,11 +261,26 @@ final class RoadJobs: ObservableObject {
             }
         })
         self.engine = engine
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Road to KML") { [weak self] in
-            MainActor.assumeIsolated { self?.cancel() }
+        // Keep running when you switch apps: location updates (GPS off) keep the app alive.
+        // Without location access, iOS's ~30 s of background time is all there is, and the
+        // run is cancelled cleanly when it runs out.
+        RunKeepAlive.shared.start()
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Road to KML") {
+            MainActor.assumeIsolated {
+                let jobs = RoadJobs.shared
+                if !RunKeepAlive.shared.isActive { jobs.cancel() }
+                if jobs.backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(jobs.backgroundTask)
+                    jobs.backgroundTask = .invalid
+                }
+            }
         }
+        pacer.inBackground = UIApplication.shared.applicationState == .background
+        let threadPacer = pacer
 
         let thread = Thread {
+            threadPacer.attachToCurrentThread()
+            defer { threadPacer.detach() }
             let result = engine.run(argv)
             let surface = MapSurface(geometry: engine.lastSurface, pins: engine.lastPins)
             let outputs = engine.outputs
@@ -257,7 +289,7 @@ final class RoadJobs: ObservableObject {
             }
         }
         thread.stackSize = 16 << 20
-        thread.qualityOfService = .userInitiated
+        thread.qualityOfService = automatic ? .utility : .userInitiated
         thread.start()
         return job
     }
@@ -280,10 +312,20 @@ final class RoadJobs: ObservableObject {
         job.surface = surface
         engine = nil
         refreshFiles()
-        if backgroundTask != .invalid {
-            UIApplication.shared.endBackgroundTask(backgroundTask)
-            backgroundTask = .invalid
-        }
+        let task = backgroundTask
+        backgroundTask = .invalid
+        let callback = onFinish, wasAutomatic = automatic
+        onFinish = nil
+        automatic = false
+        Notifier.shared.runFinished(job, automatic: wasAutomatic)
+        if !job.outputs.isEmpty { Backup.shared.backUp(reason: "Road to KML run") }
+        callback?(job)
+        // The daily map may be waiting for this run to end.
+        if callback == nil { DailyRoads.shared.kick() }
+        // Only now let the app sleep: a next day's map may have just started, and the
+        // keep-alive can't be restarted from the background.
+        if !isRunning { RunKeepAlive.shared.stop() }
+        if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
     }
 
     func refreshFiles() {

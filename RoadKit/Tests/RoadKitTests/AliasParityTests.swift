@@ -1,19 +1,33 @@
+import Foundation
 import XCTest
+import ZIPFoundation
 @testable import RoadKit
 
 /// Compares the Swift alias engine with road_aliases.py on ~27,000 name/state/county
-/// combinations. The fixture is produced by the Python reference; skipped when absent
-/// (it isn't shipped with the app).
+/// combinations. The answers come from the Python: Fixtures/aliases.zip holds a saved set,
+/// and CI first recomputes it with the current road_aliases.py
+/// (road_to_kml/make_alias_fixture.py) and points ROADKIT_ALIAS_FIXTURE at the result.
 final class AliasParityTests: XCTestCase {
-    static let fixture = ProcessInfo.processInfo.environment["ROADKIT_ALIAS_FIXTURE"]
-        ?? "/home/claude/fixtures/aliases.json"
+    static var cached: [String: Any]?
 
     func load() throws -> [String: Any] {
-        guard FileManager.default.fileExists(atPath: Self.fixture) else {
-            throw XCTSkip("no alias fixture at \(Self.fixture)")
+        if let c = Self.cached { return c }
+        let data: Data
+        if let path = ProcessInfo.processInfo.environment["ROADKIT_ALIAS_FIXTURE"], !path.isEmpty {
+            data = try Data(contentsOf: URL(fileURLWithPath: path))
+        } else {
+            guard let zip = Bundle.module.url(forResource: "aliases", withExtension: "zip", subdirectory: "Fixtures") else {
+                throw XCTSkip("no alias fixture")
+            }
+            let archive = try Archive(url: zip, accessMode: .read)
+            guard let entry = archive["aliases.json"] else { throw XCTSkip("aliases.zip has no aliases.json") }
+            var d = Data()
+            _ = try archive.extract(entry) { d.append($0) }
+            data = d
         }
-        let data = try Data(contentsOf: URL(fileURLWithPath: Self.fixture))
-        return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let fx = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        Self.cached = fx
+        return fx
     }
 
     func testEveryCaseMatchesPython() throws {

@@ -1,4 +1,5 @@
 build/
+build-sim/
 DerivedData/
 Payload/
 *.ipa
@@ -9,3 +10,7 @@ xcuserdata/
 RoadKit/.build/
 RoadKit/.swiftpm/
 RoadKit/Package.resolved
+
+# Python
+__pycache__/
+*.pyc

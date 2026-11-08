@@ -32,3 +32,27 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
+  WaytraceTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: WaytraceTests
+      - path: Waytrace/Exporter.swift
+      - path: Waytrace/TrackPoint.swift
+      - path: Waytrace/Logic
+    dependencies:
+      - target: Waytrace
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.waytrace.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+schemes:
+  Waytrace:
+    build:
+      targets:
+        Waytrace: all
+        WaytraceTests: [test]
+    test:
+      targets:
+        - WaytraceTests

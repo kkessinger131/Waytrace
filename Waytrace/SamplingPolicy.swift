@@ -14,6 +14,10 @@ struct SamplingPolicy: Equatable, Sendable {
     /// fixes (±30–65 m) wander more than 20 m while you sit still; this keeps most of that
     /// drift out. Outdoors (±3–10 m) it changes nothing.
     var driftGuard: Bool
+    /// Let the GPS rest while you stay in one place (see StillnessDetector).
+    var restWhenStill: Bool = true
+    /// Minutes of stillness before it rests.
+    var restAfterMinutes: Double = 5
 
     /// The distance a fix must exceed (from the last saved point) to be saved.
     func requiredMove(forAccuracy accuracy: Double) -> Double {
@@ -33,7 +37,8 @@ struct SamplingPolicy: Equatable, Sendable {
     static let cachedFixTolerance: TimeInterval = 5
 
     static let defaults = SamplingPolicy(interval: 15, minDistance: 20, maxAccuracy: 50,
-                                         splitAtMidnight: true, driftGuard: true)
+                                         splitAtMidnight: true, driftGuard: true,
+                                         restWhenStill: true, restAfterMinutes: 5)
 
     enum Key {
         static let interval = "sampling.interval"
@@ -41,6 +46,8 @@ struct SamplingPolicy: Equatable, Sendable {
         static let maxAccuracy = "sampling.maxAccuracy"
         static let splitAtMidnight = "sampling.splitAtMidnight"
         static let driftGuard = "sampling.driftGuard"
+        static let restWhenStill = "sampling.restWhenStill"
+        static let restAfterMinutes = "sampling.restAfterMinutes"
     }
 
     static func registerDefaults() {
@@ -50,6 +57,8 @@ struct SamplingPolicy: Equatable, Sendable {
             Key.maxAccuracy: defaults.maxAccuracy,
             Key.splitAtMidnight: defaults.splitAtMidnight,
             Key.driftGuard: defaults.driftGuard,
+            Key.restWhenStill: defaults.restWhenStill,
+            Key.restAfterMinutes: defaults.restAfterMinutes,
         ])
     }
 
@@ -61,7 +70,9 @@ struct SamplingPolicy: Equatable, Sendable {
             minDistance: max(0, d.double(forKey: Key.minDistance)),
             maxAccuracy: max(0, d.double(forKey: Key.maxAccuracy)),
             splitAtMidnight: d.bool(forKey: Key.splitAtMidnight),
-            driftGuard: d.bool(forKey: Key.driftGuard)
+            driftGuard: d.bool(forKey: Key.driftGuard),
+            restWhenStill: d.bool(forKey: Key.restWhenStill),
+            restAfterMinutes: min(30, max(3, d.double(forKey: Key.restAfterMinutes)))
         )
     }
 }

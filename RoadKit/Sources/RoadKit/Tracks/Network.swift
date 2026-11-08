@@ -246,6 +246,7 @@ extension Tracks {
         var prevXY = XY(0, 0)
         var prevT: Stamp?
         for o in obs {
+            Pacing.tick()
             let radius = min(200, max(40, 4 * o.sigma))
             var cands = net.candidates(o.x, o.y, radius)
             if cands.isEmpty { cands = net.candidates(o.x, o.y, radius * 2) }

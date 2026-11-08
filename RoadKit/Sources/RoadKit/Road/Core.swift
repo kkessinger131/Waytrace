@@ -153,6 +153,7 @@ public enum RoadGeom {
             if let c = disc.centroid { left.append(LeftRound(x: c.x, y: c.y, reason: reason)) }
         }
         for disc in discs {
+            Pacing.tick()
             do {
                 if let fault { throw GeometryError(message: fault) }
                 let near = tree?.query(disc) ?? []
@@ -246,6 +247,7 @@ public enum RoadGeom {
     static func bufferLines(_ lines: [TaggedLine], extraLanes: Int = 0, leftWidth: Double? = nil,
                             rightWidth: Double? = nil) throws -> [Geometry] {
         try lines.map { line, tags in
+            Pacing.tick()
             var base = roadWidth(tags)
             if extraLanes != 0 { base += Double(extraLanes) * RoadWidths.laneWidth }
             let half = base / 2

@@ -28,7 +28,12 @@ let package = Package(
         ),
         .testTarget(
             name: "RoadKitTests",
-            dependencies: ["RoadKit"]
+            dependencies: [
+                "RoadKit",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            ],
+            // aliases.zip: ~27,000 names worked out by road_aliases.py, for AliasParityTests.
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

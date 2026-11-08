@@ -89,8 +89,19 @@ All of these are in Settings (gear icon) and apply at the next RECORD.
 - **The save attempt.** Each attempt uses the newest fix, or a fix from the
   previous 3 s if that one is more accurate. Saving appends one ~150-byte line
   to a CSV.
-- **Battery.** The GPS stays on while recording, as in any fitness tracker.
-  That GPS is the main battery cost, so test a full day before relying on it.
+- **Battery: the GPS rests while you stay put.** The GPS is the main battery
+  cost, so after you've been still for 5 minutes it is turned down to cell-tower
+  accuracy until you move (Settings › Battery; on by default). It only rests
+  when every sign agrees: no fix leaves a small circle (40 m, more for vague
+  indoor fixes), the motion sensor reports no walking, cycling or driving, and
+  fewer than 30 steps are counted. Sitting at a red light or in a traffic jam
+  reads as driving, and a short break on a hike is shorter than 5 minutes, so
+  neither rests. Location updates never stop, so the app stays alive exactly as
+  before and the recording carries on. It wakes after about 10 steps, as soon
+  as the phone senses walking or driving, when you leave a 150 m geofence (with
+  "Always" access), or at a quick GPS check every 3 minutes; the status card
+  shows when it rested and what woke it. Nothing is saved while resting, since
+  you haven't gone anywhere.
 - **No road snapping.** The activity type is `.other`, so a walk across a
   plaza or field is recorded as walked.
 - **Drift guard.** Indoors, wifi positions (±30–65 m) wander more than 20 m
@@ -118,6 +129,7 @@ every recording combined.
 | **Records.json** | `road_to_kml.py --track`. Google Takeout's Records.json format, which `road_tracks.py` already reads, with per-point accuracy and travel mode. |
 | **GPX** | Any GPS tool, and `exiftool -geotag` if you ever want to geotag photos from the track. Accuracy, speed and course are in `<extensions>`. |
 | **CSV** | The raw recording, one row per point. |
+| **Photo map** (tap to make) | The recording's line with a camera marker for every photo and video taken during it (screenshots left out). A photo with its own location goes there; one without is placed on the line by the time it was taken, in a separate yellow folder so it's easy to check. Only the recording's own time span is searched (plus 5 minutes either side), so nothing from before you had the app is added. |
 
 ### Using the Records.json with road_to_kml.py
 
@@ -173,6 +185,41 @@ isn't stored):
   goes back 7 days. If a recording missed its labels, open it and tap **Fill
   in walking / driving labels** within the week.
 
+## Daily road map
+
+Each time you press **STOP**, every day in that recording is run through Road
+to KML with the **GPS history** settings from the Roads tab, into
+`Road KML/roads_YYYY-MM-DD.kml`: one file per day, with all of that day's
+recordings together. There's deliberately no running "everywhere" map; that
+stays in your QGIS workflow. A recording that runs past midnight maps the
+finished day the next time you open the app (heavy work never runs in the
+background alongside a recording). If the map servers are busy, it tries again
+after 30 minutes and after 2 hours, then leaves the day for you to run by hand.
+Turn it off in Settings › Daily road map.
+
+A run keeps going when you switch to another app: while it works, location
+updates at cell-tower accuracy (no GPS) keep Waytrace running, and the engine
+paces itself in the background so iOS doesn't stop it for using too much CPU.
+A notification comes when a run finishes, saying if anything went wrong
+(failed rows, trips that couldn't be matched, gaps, map data that couldn't be
+downloaded). Manual runs only notify if you've left the app.
+
+## Backup to iCloud Drive
+
+Settings › Backup › **Choose a folder in iCloud Drive…** (make one first, e.g.
+iCloud Drive › Waytrace). Recordings are copied into `Recordings/` and road
+maps into `Road KML/` every 15 minutes while recording, at STOP, after each
+Road to KML run, and with **Back up now**. Only changed files are copied, and
+nothing is ever deleted from the backup.
+
+## Signing reminder
+
+A free Apple ID signs the app for 7 days. Settings shows when this install
+expires, and a notification comes 24 hours before. Set up Sideloadly's
+automatic refresh ([INSTALL_WITHOUT_MAC.md](INSTALL_WITHOUT_MAC.md), part D) and
+your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps
+your recordings; deleting it erases them (another reason for the backup).
+
 ## Roads (road_to_kml.py in the app)
 
 The **Roads** tab is road_to_kml.py and its browser interface, ported to Swift
@@ -200,9 +247,31 @@ matching and batches. It needs a network connection for the map data.
 - **Settings** has the Overpass server override and the mirror tally.
 
 Files live in the Files app under **On My iPhone › Waytrace › Road KML**
-(imported inputs in its **Inputs** folder). The engine's test suite is a port
-of `test_road_to_kml.py`; it runs with `cd RoadKit && swift test` on a Mac and
-in the GitHub build.
+(imported inputs in its **Inputs** folder).
+
+## Tests
+
+Every GitHub build runs:
+
+- **road_to_kml.py's own tests** (`road_to_kml/test_road_to_kml.py`, offline).
+- **RoadKit's tests** (`cd RoadKit && swift test`): the port of
+  test_road_to_kml.py with the same synthetic DC street grid and fakes.
+- **The cross-check**: `road_to_kml/crosscheck.py` runs 17 jobs through the
+  Python script (named roads, outlines, ramps, clips, TIGER/Line, Timeline and
+  Waytrace-recording tracks), and `CrossCheckTests` runs the same jobs through
+  the Swift port and checks both draw the same road surface, file name and
+  exit code.
+- **Alias parity**: about 27,000 road names expanded by road_aliases.py
+  (recomputed with the current script by `make_alias_fixture.py`) must come
+  out the same in Swift.
+- **The app's tests on an iPhone simulator** (`WaytraceTests`): resting the
+  GPS, photo placement, the daily map queue, signing expiry, run notifications,
+  background pacing and exports. They run inside the app, so the build also
+  checks that it launches.
+
+The `road_to_kml/` folder holds copies of the Python scripts for these checks.
+The originals live in the Road to KML project; copy changes across so the two
+stay in step.
 
 ---
 
@@ -215,9 +284,18 @@ in the GitHub build.
 | `TrackStore.swift` | One CSV per recording in Documents/Tracks, appended per point |
 | `TrackPoint.swift` | The point model, CSV format, time formats, distance maths |
 | `MotionAnnotator.swift` | Walking/driving labels from Core Motion history |
-| `Exporter.swift` | KML, Records.json, GPX and CSV writers |
+| `Exporter.swift` | KML, Records.json, GPX, CSV and photo-map writers |
+| `Logic/` | Rules without any iOS dependency, tested on their own: `StillnessDetector` (when the GPS rests and wakes), `PhotoPlacer`, `DailyPlan`, `SigningInfo`, `RunSummary`, `BackgroundPacer` |
+| `MotionWatch.swift` | Live activity and step count while recording, for resting the GPS |
+| `DailyRoads.swift` | The automatic daily road map |
+| `Backup.swift` | Copies to the iCloud Drive folder |
+| `Notifier.swift` | Run-finished and signing-expiry notifications |
+| `RunKeepAlive.swift` | Keeps a Road to KML run alive in the background |
+| `PhotoLibrary.swift` | Reads photo times and places for the photo map |
 | `Views/` | SwiftUI screens: main screen with RECORD/STOP, recording detail, export sheet, settings |
 | `Roads/` | The Roads tab: forms and batch (`RoadForms`), runs and output files (`RoadJobs`), screens (`RoadsView`, `RunView`) |
 | `RoadKit/` | Swift package: the port of road_to_kml.py, road_aliases.py, road_tracks.py, mirror_stats.py and county_fips.py, on GEOS (the library Shapely uses) |
-| `RoadKit/Tests/` | The port of test_road_to_kml.py, with the same synthetic DC street grid and offline fakes |
+| `RoadKit/Tests/` | The port of test_road_to_kml.py, with the same synthetic DC street grid and offline fakes; the cross-check and alias parity tests |
+| `WaytraceTests/` | The app's tests (run on a simulator) |
+| `road_to_kml/` | Copies of the Python scripts, for the cross-check |
 | `Waytrace/Assets.xcassets`, `Design/AppIcon.svg` | The app icon (default, dark and tinted) and its source drawing |

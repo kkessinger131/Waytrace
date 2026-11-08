@@ -190,6 +190,17 @@ private struct StatusView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if recorder.isRecording, let since = recorder.restingSince {
+                Label("GPS resting since \(since.formatted(date: .omitted, time: .shortened)): you've stayed in one place. Still recording; it wakes the moment you move.",
+                      systemImage: "leaf")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else if recorder.isRecording, let note = recorder.restNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if let fix = recorder.lastFix, recorder.isRecording {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     row("Position", Fmt.coordinate(fix.coordinate))

@@ -1,0 +1,10 @@
+# What road_to_kml.py and its tests need (CI installs these to cross-check the Swift port).
+overpy
+shapely
+pyproj
+simplekml
+requests
+numpy
+geopandas
+pyogrio
+pytest

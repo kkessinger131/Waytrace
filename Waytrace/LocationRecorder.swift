@@ -14,6 +14,10 @@ import UIKit
 ///   point, or if its accuracy is worse than `maxAccuracy`. With the drift guard on, a fix
 ///   must also have moved further than its own uncertainty.
 /// - Saved points are appended to a CSV file immediately.
+/// - When you stay in one place for a while, the GPS rests (StillnessDetector): Core Location
+///   keeps running at cell-tower accuracy, which keeps the app alive exactly as before, and
+///   the GPS comes back the moment the motion coprocessor, the step counter, a geofence or a
+///   GPS check every 3 minutes says you're moving.
 @MainActor
 final class LocationRecorder: NSObject, ObservableObject {
     static let shared = LocationRecorder()
@@ -36,6 +40,10 @@ final class LocationRecorder: NSObject, ObservableObject {
     /// Bumped whenever files on disk change, so lists can reload.
     @Published private(set) var libraryRevision = 0
     @Published var message: String?
+    /// When the GPS started resting (nil while it's on).
+    @Published private(set) var restingSince: Date?
+    /// The last rest or wake, for the status card ("GPS woke at 14:02: 12 steps").
+    @Published private(set) var restNote: String?
 
     private let manager = CLLocationManager()
     private let store = TrackStore.shared
@@ -49,6 +57,10 @@ final class LocationRecorder: NSObject, ObservableObject {
     private var nextAttemptAt = Date.distantPast
     private var updatesStartedAt = Date.distantPast
     private var startWhenAuthorized = false
+    private let motion = MotionWatch()
+    private var stillness: StillnessDetector?
+    private var tickTimer: Timer?
+    private static let restRegionID = "waytrace.resting"
 
     private enum Key {
         static let activeSession = "recorder.activeSession"
@@ -81,6 +93,7 @@ final class LocationRecorder: NSObject, ObservableObject {
 
     func stop() {
         guard isRecording else { return }
+        stopRestWatch()
         stopUpdates()
         let finished = sessionURL
         closeWriter()
@@ -92,8 +105,9 @@ final class LocationRecorder: NSObject, ObservableObject {
             try? FileManager.default.removeItem(at: finished)
             libraryRevision += 1
         } else {
-            annotateActivity(of: finished)
+            annotateActivity(of: finished, thenMapDays: DailyPlan.days(of: points))
         }
+        Backup.shared.backUp(reason: "recording stopped")
     }
 
     /// Called whenever the app comes to the foreground. Starting updates that are already
@@ -102,6 +116,8 @@ final class LocationRecorder: NSObject, ObservableObject {
     func appBecameActive() {
         if isRecording {
             manager.startUpdatingLocation()
+            // Resting? Take a sharp look so the screen shows where you really are.
+            if let e = stillness?.checkNow(Date()) { handle(e) }
         } else {
             resumeIfNeeded()
         }
@@ -147,6 +163,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         policy = SamplingPolicy.current
         startUpdates()
         isRecording = true
+        startRestWatch()
     }
 
     // MARK: - Session files
@@ -157,6 +174,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         guard openSession(start: Date()) else { return }
         startUpdates()
         isRecording = true
+        startRestWatch()
         requestAlwaysIfNeeded()
     }
 
@@ -191,12 +209,15 @@ final class LocationRecorder: NSObject, ObservableObject {
               let start = sessionStart,
               !Calendar.current.isDate(date, inSameDayAs: start) else { return }
         let finished = sessionURL
+        let finishedDays = DailyPlan.days(of: points)
         closeWriter()
         openSession(start: Calendar.current.startOfDay(for: date))
-        if let finished { annotateActivity(of: finished) }
+        if let finished { annotateActivity(of: finished, thenMapDays: finishedDays) }
     }
 
-    private func annotateActivity(of url: URL) {
+    /// Fills in walking/driving labels, then (for a finished recording) queues its days for
+    /// the automatic road map; the labels decide which trips are drives and which are walks.
+    private func annotateActivity(of url: URL, thenMapDays days: [String] = []) {
         Task {
             let original = store.loadPoints(from: url)
             if !original.isEmpty, original.contains(where: { $0.activity == nil }) {
@@ -207,7 +228,115 @@ final class LocationRecorder: NSObject, ObservableObject {
                 }
             }
             libraryRevision += 1
+            if !days.isEmpty { DailyRoads.shared.enqueue(days) }
         }
+    }
+
+    // MARK: - Resting the GPS while you stay put
+
+    private func startRestWatch() {
+        stopRestWatch()
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
+            MainActor.assumeIsolated { LocationRecorder.shared.tick() }
+        }
+        guard policy.restWhenStill else { return }
+        var config = StillnessDetector.Config()
+        config.restAfter = policy.restAfterMinutes * 60
+        stillness = StillnessDetector(config: config, motionAvailable: MotionWatch.isAvailable, now: Date())
+        motion.start(onActivity: { reading, at in
+            LocationRecorder.shared.motionReading(reading, at: at)
+        }, onSteps: { steps, at in
+            LocationRecorder.shared.stepCount(steps, at: at)
+        })
+    }
+
+    private func stopRestWatch() {
+        tickTimer?.invalidate()
+        tickTimer = nil
+        motion.stop()
+        if stillness?.isResting == true { setPrecise() }
+        stillness = nil
+        stopRestRegion()
+        restingSince = nil
+    }
+
+    private func tick() {
+        guard isRecording else { return }
+        if let e = stillness?.tick(Date()) { handle(e) }
+        Backup.shared.recordingTick()
+    }
+
+    private func motionReading(_ r: MotionReading, at t: Date) {
+        if let e = stillness?.motion(r, at: t) { handle(e) }
+    }
+
+    private func stepCount(_ n: Int, at t: Date) {
+        if let e = stillness?.steps(n, at: t) { handle(e) }
+    }
+
+    private func handle(_ event: StillnessDetector.Event) {
+        let clock = Date().formatted(date: .omitted, time: .shortened)
+        switch event {
+        case .rest:
+            setCoarse()
+            restingSince = Date()
+            restNote = "GPS resting since \(clock): you've stayed in one place."
+            startRestRegion()
+        case .startCheck:
+            setPrecise()
+        case .endCheck:
+            setCoarse()
+        case .wake(let reason):
+            setPrecise()
+            if let since = restingSince {
+                let mins = Int(Date().timeIntervalSince(since) / 60)
+                restNote = "GPS woke at \(clock) after resting \(mins) min (\(reason))."
+            } else {
+                restNote = "GPS woke at \(clock) (\(reason))."
+            }
+            restingSince = nil
+            stopRestRegion()
+            // Start sampling afresh: the next good fix is saved straight away.
+            updatesStartedAt = Date()
+            nextAttemptAt = .distantPast
+            windowBest = nil
+        }
+    }
+
+    /// GPS off; cell towers only. Location updates keep running (never stopped), which is what
+    /// keeps the app alive in the background and the recording going.
+    private func setCoarse() {
+        manager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        manager.distanceFilter = 100
+    }
+
+    private func setPrecise() {
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = policy.platformDistanceFilter > 0 ? policy.platformDistanceFilter : kCLDistanceFilterNone
+    }
+
+    /// A geofence around the resting spot (needs "Always"). iOS watches it even while the
+    /// GPS is off, and reports leaving it.
+    private func startRestRegion() {
+        guard manager.authorizationStatus == .authorizedAlways,
+              CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self),
+              let a = stillness?.anchor else { return }
+        let region = CLCircularRegion(center: CLLocationCoordinate2D(latitude: a.latitude, longitude: a.longitude),
+                                      radius: 150, identifier: Self.restRegionID)
+        region.notifyOnEntry = false
+        region.notifyOnExit = true
+        manager.startMonitoring(for: region)
+    }
+
+    private func stopRestRegion() {
+        for r in manager.monitoredRegions where r.identifier == Self.restRegionID {
+            manager.stopMonitoring(for: r)
+        }
+    }
+
+    fileprivate func exitedRegion(_ id: String) {
+        guard id == Self.restRegionID else { return }
+        if let e = stillness?.leftRegion(at: Date()) { handle(e) }
     }
 
     // MARK: - Core Location
@@ -258,6 +387,19 @@ final class LocationRecorder: NSObject, ObservableObject {
             else { continue }
             latestFix = location
 
+            if stillness != nil {
+                let f = StillnessDetector.Fix(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude,
+                                              accuracy: location.horizontalAccuracy, time: location.timestamp)
+                if let e = stillness?.fix(f) {
+                    handle(e)
+                    // A rough cell-tower position woke the GPS: wait for a sharp one to save.
+                    if case .wake = e, location.horizontalAccuracy > (stillness?.config.goodAccuracy ?? 100) { continue }
+                }
+                if stillness?.isResting == true { continue }   // nothing is saved while resting
+                // Just after waking, iOS may still hand over a cell-tower position.
+                if location.horizontalAccuracy > 1000 { continue }
+            }
+
             // Track the sharpest fix in the few seconds leading up to the next attempt.
             if location.timestamp >= nextAttemptAt.addingTimeInterval(-SamplingPolicy.lookback),
                location.horizontalAccuracy <= (windowBest?.horizontalAccuracy ?? .infinity) {
@@ -274,9 +416,11 @@ final class LocationRecorder: NSObject, ObservableObject {
             nextAttemptAt = location.timestamp.addingTimeInterval(policy.interval)
             windowBest = nil
         }
-        // Only drive the on-screen readout when someone can see it.
-        if UIApplication.shared.applicationState != .background {
-            lastFix = latestFix
+        // Only drive the on-screen readout when someone can see it (and not with the rough
+        // positions that come in while the GPS rests).
+        if UIApplication.shared.applicationState != .background, stillness?.isResting != true,
+           let fix = latestFix, fix.horizontalAccuracy <= 1000 {
+            lastFix = fix
         }
     }
 
@@ -357,5 +501,15 @@ extension LocationRecorder: CLLocationManagerDelegate {
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         MainActor.assumeIsolated { self.authorizationChanged() }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        let id = region.identifier
+        MainActor.assumeIsolated { self.exitedRegion(id) }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?,
+                                     withError error: Error) {
+        // The geofence is only a helper; the motion and GPS checks still wake the GPS.
     }
 }
