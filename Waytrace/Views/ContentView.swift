@@ -5,6 +5,7 @@ import UIKit
 struct ContentView: View {
     @EnvironmentObject private var recorder: LocationRecorder
     @State private var sessions: [TrackSession] = []
+    @State private var pendingDelete: IndexSet?
     @State private var showSettings = false
     @State private var showExportAll = false
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
@@ -43,7 +44,7 @@ struct ContentView: View {
                         }
                         .deleteDisabled(active)
                     }
-                    .onDelete(perform: delete)
+                    .onDelete { pendingDelete = $0 }
                 }
             }
             .navigationTitle("Waytrace")
@@ -75,11 +76,32 @@ struct ContentView: View {
             }
             .task(id: recorder.libraryRevision) { reload() }
             .refreshable { reload() }
+            .confirmationDialog(deleteTitle, isPresented: Binding(get: { pendingDelete != nil },
+                                                                  set: { if !$0 { pendingDelete = nil } }),
+                                titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    if let offsets = pendingDelete { delete(at: offsets) }
+                    pendingDelete = nil
+                }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: {
+                Text("Its points are removed from this iPhone. Files you've already exported or made with Road to KML aren't affected. This can't be undone.")
+            }
         }
     }
 
     private func reload() {
         sessions = TrackStore.shared.sessions()
+    }
+
+    private var deleteTitle: String {
+        guard let offsets = pendingDelete else { return "Delete recording?" }
+        let picked = offsets.filter { $0 < sessions.count }.map { sessions[$0] }
+        if picked.count == 1, let s = picked.first {
+            let when = s.startDate?.formatted(date: .abbreviated, time: .shortened) ?? s.name
+            return "Delete the recording from \(when)?"
+        }
+        return "Delete \(picked.count) recordings?"
     }
 
     private func delete(at offsets: IndexSet) {
@@ -95,6 +117,16 @@ struct ContentView: View {
 /// The two big buttons, pinned to the bottom of the screen within thumb reach.
 private struct ControlBar: View {
     @EnvironmentObject private var recorder: LocationRecorder
+    @State private var confirmStop = false
+
+    private var stopMessage: String {
+        var parts: [String] = []
+        if let start = recorder.sessionStart {
+            parts.append("Recording since \(start.formatted(date: .omitted, time: .shortened))")
+        }
+        parts.append("\(recorder.stats.saved) point\(recorder.stats.saved == 1 ? "" : "s") saved")
+        return parts.joined(separator: ", ") + ". RECORD starts a new recording afterwards."
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -108,13 +140,19 @@ private struct ControlBar: View {
             .disabled(recorder.isRecording)
 
             Button {
-                recorder.stop()
+                confirmStop = true
             } label: {
                 Label("STOP", systemImage: "stop.fill")
                     .frame(maxWidth: .infinity)
             }
             .tint(.gray)
             .disabled(!recorder.isRecording)
+            .confirmationDialog("Stop recording?", isPresented: $confirmStop, titleVisibility: .visible) {
+                Button("Stop recording", role: .destructive) { recorder.stop() }
+                Button("Keep recording", role: .cancel) {}
+            } message: {
+                Text(stopMessage)
+            }
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)

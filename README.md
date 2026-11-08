@@ -182,8 +182,8 @@ county downloads including alternate names, aliases, intersection fill and
 trimming, ramps, pavement outlines, `--from`/`--to` stretches, GPS-history map
 matching and batches. It needs a network connection for the map data.
 
-- **Road**, **GPS history**, **OSM way** and **Batch** are the same forms as the
-  browser UI, with the same options. The pin buttons pick a `--from`/`--to`
+- **GPS history**, **Road**, **OSM way** and **Batch** are the same forms, in the
+  same order, as the browser UI, with the same options. The pin buttons pick a `--from`/`--to`
   point on a map.
 - **GPS history** takes Waytrace recordings (**Add a recording**) and any file
   the script reads: Timeline.json / location-history.json, Takeout
@@ -220,3 +220,4 @@ in the GitHub build.
 | `Roads/` | The Roads tab: forms and batch (`RoadForms`), runs and output files (`RoadJobs`), screens (`RoadsView`, `RunView`) |
 | `RoadKit/` | Swift package: the port of road_to_kml.py, road_aliases.py, road_tracks.py, mirror_stats.py and county_fips.py, on GEOS (the library Shapely uses) |
 | `RoadKit/Tests/` | The port of test_road_to_kml.py, with the same synthetic DC street grid and offline fakes |
+| `Waytrace/Assets.xcassets`, `Design/AppIcon.svg` | The app icon (default, dark and tinted) and its source drawing |

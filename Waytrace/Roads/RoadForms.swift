@@ -8,7 +8,8 @@ import RoadKit
 // command lines for the engine, batch rows and CSV.
 
 enum RoadMode: String, CaseIterable, Identifiable, Codable {
-    case road, track, xml, batch
+    // Same order as the browser UI's tabs: GPS history first.
+    case track, road, xml, batch
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -428,7 +429,7 @@ final class RoadFormStore: ObservableObject {
 
     private init() {
         let s = UserDefaults.standard.data(forKey: "roads.forms").flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
-        mode = s?.mode ?? .road
+        mode = s?.mode ?? .track
         road = s?.road ?? RoadForm()
         track = s?.track ?? TrackForm()
         xml = s?.xml ?? XMLForm()

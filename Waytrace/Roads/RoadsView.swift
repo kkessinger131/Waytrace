@@ -621,7 +621,7 @@ struct BatchSections: View {
     var body: some View {
         Section {
             if forms.batch.isEmpty {
-                Text("No rows yet. Fill in the Road, GPS history or OSM way tab and choose Add to batch, or open a CSV.")
+                Text("No rows yet. Fill in the GPS history, Road or OSM way tab and choose Add to batch, or open a CSV.")
                     .foregroundStyle(.secondary)
             }
             ForEach(Array(forms.batch.enumerated()), id: \.offset) { i, r in
