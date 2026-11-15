@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
@@ -12,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(SamplingPolicy.Key.restAfterMinutes) private var restAfterMinutes = SamplingPolicy.defaults.restAfterMinutes
     @ObservedObject private var daily = DailyRoads.shared
     @ObservedObject private var backup = Backup.shared
+    @ObservedObject private var notifier = Notifier.shared
     @State private var notifyRuns = Notifier.shared.notifyRuns
     @State private var pickFolder = false
 
@@ -101,10 +103,25 @@ struct SettingsView: View {
                     Toggle("Tell me when a Road to KML run finishes", isOn: $notifyRuns)
                         .onChange(of: notifyRuns) { _, on in Notifier.shared.notifyRuns = on }
                     LabeledContent("This install", value: signingText)
+                    LabeledContent("Notifications", value: permissionText)
+                    if notifier.permission == .denied {
+                        Button("Turn them on in iOS Settings…") {
+                            if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                    }
+                    if SigningInfo.current != nil {
+                        LabeledContent("Expiry warning", value: reminderText)
+                    }
+                    if let problem = notifier.problem {
+                        Text(problem).font(.footnote).foregroundStyle(.red)
+                    }
+                    Button("Send a test notification") { notifier.sendTest() }
                 } header: {
                     Text("Notifications and signing")
                 } footer: {
-                    Text("A notification comes when a run finishes, saying if anything went wrong (only if you've left the app, or for the automatic daily map). Another comes 24 hours before this install stops opening. With Sideloadly's automatic refresh (see the Waytrace README), your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps your recordings; deleting it erases them.")
+                    Text("A notification comes when a run finishes, saying if anything went wrong (only if you've left the app, or for the automatic daily map). Another comes 24 hours before this install stops opening; “Expiry warning” shows when iOS has it set for. If it says Not set, open the app once more, or send a test. With Sideloadly's automatic refresh (see the Waytrace README), your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps your recordings; deleting it erases them.")
                 }
 
                 Section {
@@ -129,7 +146,24 @@ struct SettingsView: View {
             .fileImporter(isPresented: $pickFolder, allowedContentTypes: [.folder]) { result in
                 if case .success(let url) = result { backup.setFolder(url) }
             }
+            .task { await notifier.refreshStatus() }
         }
+    }
+
+    private var permissionText: String {
+        switch notifier.permission {
+        case .authorized, .provisional, .ephemeral: return "On"
+        case .denied: return "Off (iOS Settings › Waytrace)"
+        case .notDetermined: return "Not asked yet"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private var reminderText: String {
+        if let at = notifier.reminderAt {
+            return at.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        }
+        return notifier.permission == .denied ? "Can't be shown (notifications off)" : "Not set"
     }
 
     private var signingText: String {

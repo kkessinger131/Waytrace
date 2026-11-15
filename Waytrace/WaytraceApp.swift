@@ -21,8 +21,7 @@ struct WaytraceApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 recorder.appBecameActive()
-                Notifier.shared.askOnce()
-                Notifier.shared.scheduleSigningReminder()
+                Notifier.shared.appCameForward()
                 DailyRoads.shared.kick()
             }
         }
@@ -37,7 +36,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // If a recording was in progress, it picks up exactly where it left off.
         LocationRecorder.shared.resumeIfNeeded()
         Notifier.shared.attach()
-        Notifier.shared.scheduleSigningReminder()
+        Task { await Notifier.shared.scheduleSigningReminder() }
         _ = RoadJobs.shared            // installs the background pacing hook
         return true
     }

@@ -16,11 +16,15 @@ enum SigningInfo {
         return dict["ExpirationDate"] as? Date
     }
 
+    private static var profileURL: URL? { Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision") }
+
+    /// True when the app carries a signing profile (every sideloaded install does).
+    static var hasProfile: Bool { profileURL != nil }
+
     /// The expiry of the running app, or nil when there's no profile (simulator, or an App
     /// Store / TestFlight build).
     static var current: Date? {
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-              let data = try? Data(contentsOf: url) else { return nil }
+        guard let url = profileURL, let data = try? Data(contentsOf: url) else { return nil }
         return expirationDate(fromProfile: data)
     }
 
