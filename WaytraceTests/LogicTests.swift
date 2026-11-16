@@ -183,27 +183,75 @@ final class DailyPlanTests: XCTestCase {
         return c
     }
 
+    func testTwoRecordingsOnOneDayAreTwoMaps() {
+        var p = DailyPlan()
+        p.add(recording: "2026-11-07_09-12-44", days: ["2026-11-07"])
+        p.add(recording: "2026-11-07_17-30-02", days: ["2026-11-07"])
+        p.add(recording: "2026-11-06_22-00-00", days: ["2026-11-07", "2026-11-06", "2026-11-07"])
+        XCTAssertEqual(p.entries.map(\.id), ["2026-11-06|2026-11-06_22-00-00", "2026-11-07|2026-11-06_22-00-00",
+                                              "2026-11-07|2026-11-07_09-12-44", "2026-11-07|2026-11-07_17-30-02"])
+        XCTAssertEqual(p.pendingSummary, "2026-11-06, 2026-11-07 (3 recordings)")
+        let first = p.next(now: t0)!
+        XCTAssertEqual(first.recording, "2026-11-06_22-00-00")
+        p.setOutput("roads_2026-11-06_22-00-00.kml", for: first.id)
+        XCTAssertEqual(p.reservedOutputs(except: "2026-11-07|2026-11-07_09-12-44"), ["roads_2026-11-06_22-00-00.kml"])
+        XCTAssertEqual(p.reservedOutputs(except: first.id), [], "an entry doesn't block its own name")
+    }
+
     func testQueueRetryAndGiveUp() {
         var p = DailyPlan()
-        p.add(["2026-11-07", "2026-11-06", "2026-11-07"])
-        XCTAssertEqual(p.pendingDays, ["2026-11-06", "2026-11-07"])
-        XCTAssertEqual(p.next(now: t0, busyDay: "2026-11-06"), "2026-11-07", "a day still being recorded waits")
-        XCTAssertTrue(p.failed("2026-11-06", now: t0))
-        XCTAssertEqual(p.next(now: t0, busyDay: nil), "2026-11-07")
+        let a = "2026-11-06|2026-11-06_08-00-00", b = "2026-11-07|2026-11-07_08-00-00"
+        p.add(recording: "2026-11-07_08-00-00", days: ["2026-11-07"])
+        p.add(recording: "2026-11-06_08-00-00", days: ["2026-11-06"])
+        XCTAssertEqual(p.next(now: t0)?.id, a)
+        p.setOutput("roads_2026-11-06_08-00-00.kml", for: a)
+        XCTAssertTrue(p.failed(a, now: t0))
+        XCTAssertEqual(p.next(now: t0)?.id, b, "a failed map waits")
         XCTAssertEqual(p.nextRetry(after: t0), t0.addingTimeInterval(1800))
-        XCTAssertEqual(p.next(now: t0.addingTimeInterval(1800), busyDay: nil), "2026-11-06")
-        XCTAssertTrue(p.failed("2026-11-06", now: t0))
+        XCTAssertEqual(p.next(now: t0.addingTimeInterval(1800))?.id, a)
+        XCTAssertTrue(p.failed(a, now: t0))
         XCTAssertEqual(p.nextRetry(after: t0), t0.addingTimeInterval(7200))
-        p.add(["2026-11-06"])                                    // recorded again: fresh start
-        XCTAssertEqual(p.next(now: t0, busyDay: nil), "2026-11-06")
-        XCTAssertTrue(p.failed("2026-11-06", now: t0))
-        XCTAssertTrue(p.failed("2026-11-06", now: t0))
-        XCTAssertFalse(p.failed("2026-11-06", now: t0), "third failure: dropped")
-        XCTAssertEqual(p.pendingDays, ["2026-11-07"])
-        p.finished("2026-11-07")
-        XCTAssertTrue(p.isEmpty)
+        p.add(recording: "2026-11-06_08-00-00", days: ["2026-11-06"])          // queued again: fresh start
+        XCTAssertEqual(p.next(now: t0)?.id, a)
+        XCTAssertEqual(p.next(now: t0)?.output, "roads_2026-11-06_08-00-00.kml", "keeps the name it was given")
+        XCTAssertTrue(p.failed(a, now: t0))
+        XCTAssertTrue(p.failed(a, now: t0))
+        XCTAssertFalse(p.failed(a, now: t0), "third failure: dropped")
+        XCTAssertEqual(p.entries.map(\.id), [b])
         let round = try? JSONDecoder().decode(DailyPlan.self, from: JSONEncoder().encode(p))
         XCTAssertEqual(round, p)
+        p.finished(b)
+        XCTAssertTrue(p.isEmpty)
+    }
+
+    func testQueueFromEarlierVersionIsSplitPerRecording() throws {
+        let old = #"{"days":[{"day":"2026-11-06","attempts":1},{"day":"2026-11-07","attempts":0}]}"#
+        var p = try JSONDecoder().decode(DailyPlan.self, from: Data(old.utf8))
+        XCTAssertEqual(p.entries.map(\.id), ["2026-11-06|*", "2026-11-07|*"])
+        p.split("2026-11-06|*", into: ["2026-11-06_09-00-00", "2026-11-06_14-00-00"])
+        XCTAssertEqual(p.entries.map(\.id), ["2026-11-06|2026-11-06_09-00-00", "2026-11-06|2026-11-06_14-00-00", "2026-11-07|*"])
+        XCTAssertEqual(p.entries.map(\.attempts), [0, 0, 0])
+    }
+
+    func testFileNamesAreNeverReused() {
+        XCTAssertEqual(DailyPlan.preferredStem(day: "2026-11-07", recording: "2026-11-07_09-12-44"), "roads_2026-11-07_09-12-44")
+        XCTAssertEqual(DailyPlan.preferredStem(day: "2026-11-07", recording: "2026-11-07_09-12-44-2"), "roads_2026-11-07_09-12-44-2")
+        XCTAssertEqual(DailyPlan.preferredStem(day: "2026-11-08", recording: "2026-11-07_22-00-00"), "roads_2026-11-08_00-00-00",
+                       "the part after midnight")
+        let stem = "roads_2026-11-07_09-12-44"
+        XCTAssertEqual(DailyPlan.uniqueName(stem, taken: []), "roads_2026-11-07_09-12-44.kml")
+        XCTAssertEqual(DailyPlan.uniqueName(stem, taken: ["roads_2026-11-07_09-12-44.kml"]), "roads_2026-11-07_09-12-44_2.kml")
+        XCTAssertEqual(DailyPlan.uniqueName(stem, taken: ["roads_2026-11-07_09-12-44.kml", "roads_2026-11-07_09-12-44_2.kml"]),
+                       "roads_2026-11-07_09-12-44_3.kml")
+        XCTAssertEqual(DailyPlan.uniqueName(stem, taken: [], exists: { $0 == "roads_2026-11-07_09-12-44.kml" }),
+                       "roads_2026-11-07_09-12-44_2.kml", "the file system is asked too")
+        // Listing names: lowercased; a file iCloud has offloaded still counts.
+        let taken = DailyPlan.takenNames(["Roads_2026-11-07_09-12-44.KML", ".roads_2026-11-07_09-12-44_2.kml.icloud", ".icloud", "notes.txt"])
+        XCTAssertEqual(taken, ["roads_2026-11-07_09-12-44.kml", "roads_2026-11-07_09-12-44_2.kml", ".icloud", "notes.txt"])
+        XCTAssertEqual(DailyPlan.uniqueName(stem, taken: taken), "roads_2026-11-07_09-12-44_3.kml")
+        // The old one-file-per-day name is never produced again.
+        XCTAssertNotEqual(DailyPlan.uniqueName(DailyPlan.preferredStem(day: "2026-11-07", recording: "2026-11-07_17-30-02"), taken: []),
+                          "roads_2026-11-07.kml")
     }
 
     func testPointsOfOneDayFromSeveralRecordings() {

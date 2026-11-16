@@ -315,7 +315,9 @@ final class LocationRecorder: NSObject, ObservableObject {
                 }
             }
             libraryRevision += 1
-            if !days.isEmpty { DailyRoads.shared.enqueue(days) }
+            if !days.isEmpty {
+                DailyRoads.shared.enqueue(recording: url.deletingPathExtension().lastPathComponent, days: days)
+            }
         }
     }
 

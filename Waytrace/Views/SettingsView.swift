@@ -64,7 +64,7 @@ struct SettingsView: View {
                 Section {
                     Toggle("Map the day's roads automatically", isOn: $daily.enabled)
                     if !daily.plan.isEmpty {
-                        LabeledContent("Waiting", value: daily.plan.pendingDays.joined(separator: ", "))
+                        LabeledContent("Waiting", value: daily.plan.pendingSummary)
                     }
                     if let r = daily.lastResult {
                         Text(r).font(.footnote).foregroundStyle(.secondary)
@@ -72,7 +72,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Daily road map")
                 } footer: {
-                    Text("When you press STOP, each day in the recording is mapped with the GPS history settings from the Roads tab, into Road KML/roads_YYYY-MM-DD.kml (one file per day; all of that day's recordings together). A recording running past midnight maps the finished day the next time you open the app. If the map servers are busy it tries again after 30 minutes and 2 hours.")
+                    Text("When you press STOP, the recording is mapped with the GPS history settings from the Roads tab, into its own file named after it: Road KML/roads_YYYY-MM-DD_HH-MM-SS.kml (a part after midnight gets that day's date and 00-00-00). Two recordings on one day make two files. A name already on the phone or in the backup folder is never reused; _2 is added instead, so a map is never overwritten. A recording running past midnight maps the finished day the next time you open the app. If the map servers are busy it tries again after 30 minutes and 2 hours.")
                 }
 
                 Section {

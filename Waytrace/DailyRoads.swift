@@ -2,15 +2,19 @@ import Foundation
 import Combine
 import UIKit
 
-/// The automatic daily road map: after a recording stops (and at midnight, when a recording
-/// rolls over to a new day), the day's points from every recording are run through Road to
-/// KML with the GPS history settings from the Roads tab, giving one file per day:
-/// Road KML/roads_YYYY-MM-DD.kml. There's no running map of everywhere; that stays in QGIS.
+/// The automatic road map: after a recording stops (and at midnight, when a recording rolls
+/// over to a new day), each day it covers is run through Road to KML with the GPS history
+/// settings from the Roads tab, one file per recording per day, named after the recording:
+/// Road KML/roads_2026-11-08_09-12-44.kml. A file name is never reused: not one on the phone,
+/// not one in the backup folder (even if it's gone from the phone), not one another waiting
+/// map has taken. If the preferred name is taken, _2, _3… is added, so a second recording on
+/// the same day can never overwrite the first one's map. There's no running map of
+/// everywhere; that stays in QGIS.
 ///
-/// Runs wait while a Road to KML run is already going. A day still being recorded waits for
-/// STOP. While a recording runs in the background, maps wait until you next open the app, so
-/// the heavy work never competes with the recording. A run that fails (usually busy map
-/// servers) is tried again after 30 minutes, then 2 hours, then left for you to run by hand.
+/// Runs wait while a Road to KML run is already going. While a recording runs in the
+/// background, maps wait until you next open the app, so the heavy work never competes with
+/// the recording. A run that fails (usually busy map servers) is tried again after 30
+/// minutes, then 2 hours, then left for you to run by hand.
 @MainActor
 final class DailyRoads: ObservableObject {
     static let shared = DailyRoads()
@@ -22,7 +26,7 @@ final class DailyRoads: ObservableObject {
     }
 
     private var retryTimer: Timer?
-    private var runningDay: String?
+    private var runningID: String?
 
     private enum Key {
         static let plan = "daily.plan"
@@ -37,27 +41,24 @@ final class DailyRoads: ObservableObject {
         lastResult = d.string(forKey: Key.result)
     }
 
-    static func outputName(_ day: String) -> String { "roads_\(day).kml" }
-
-    func enqueue(_ days: [String]) {
+    /// Queue a finished recording's days (its name is its file name without .csv).
+    func enqueue(recording: String, days: [String]) {
         guard enabled, !days.isEmpty else { return }
-        plan.add(days)
+        plan.add(recording: recording, days: days)
         save()
         kick()
     }
 
-    /// Start the next waiting day if now is a good time. Called after enqueueing, when the
+    /// Start the next waiting map if now is a good time. Called after enqueueing, when the
     /// app comes to the front, and when any Road to KML run ends.
     func kick() {
         retryTimer?.invalidate()
         retryTimer = nil
-        guard enabled, !plan.isEmpty, runningDay == nil, !RoadJobs.shared.isRunning else { return }
-        let recorder = LocationRecorder.shared
+        guard enabled, !plan.isEmpty, runningID == nil, !RoadJobs.shared.isRunning else { return }
         // Don't start heavy work in the background while a recording is running.
-        if recorder.isRecording && UIApplication.shared.applicationState == .background { return }
-        let busy: String? = recorder.isRecording ? DailyPlan.dayString(Date()) : nil
-        if let day = plan.next(now: Date(), busyDay: busy) {
-            start(day)
+        if LocationRecorder.shared.isRecording && UIApplication.shared.applicationState == .background { return }
+        if let entry = plan.next(now: Date()) {
+            start(entry)
         } else if let at = plan.nextRetry(after: Date()) {
             retryTimer = Timer.scheduledTimer(withTimeInterval: max(5, at.timeIntervalSinceNow), repeats: false) { _ in
                 MainActor.assumeIsolated { DailyRoads.shared.kick() }
@@ -65,34 +66,67 @@ final class DailyRoads: ObservableObject {
         }
     }
 
-    /// Each recording's points from `day` (recordings that started that day or up to two
-    /// days before, in case one ran past midnight).
-    private func recordings(on day: String) -> [[TrackPoint]] {
+    /// One recording's points from `day`.
+    private func points(of recording: String, on day: String) -> [TrackPoint] {
         let store = TrackStore.shared
-        return store.sessions().filter { s in
+        let url = store.tracksDirectory.appendingPathComponent(recording).appendingPathExtension("csv")
+        return store.loadPoints(from: url).filter { DailyPlan.dayString($0.time) == day }
+    }
+
+    /// The recordings with points on `day` (those that started that day or up to two days
+    /// before, in case one ran past midnight). Only needed for days queued by an earlier version.
+    private func recordings(on day: String) -> [String] {
+        TrackStore.shared.sessions().filter { s in
             guard let start = s.startDate else { return true }
             let d = DailyPlan.dayString(start)
             return d <= day && d >= DailyPlan.dayString(Self.date(day).addingTimeInterval(-2 * 86400))
         }
-        .map { store.loadPoints(from: $0.url).filter { DailyPlan.dayString($0.time) == day } }
-        .filter { !$0.isEmpty }
+        .map(\.name)
+        .filter { !points(of: $0, on: day).isEmpty }
+        .sorted()
     }
 
-    private func start(_ day: String) {
+    /// The file this map writes. The name it was given on an earlier try is kept if it's
+    /// still free (a failed run writes nothing); otherwise it gets one that no file on the
+    /// phone, in the backup folder, or any other waiting map has.
+    private func outputName(for entry: DailyPlan.Entry, recording: String) -> String {
+        let dir = RoadJobs.shared.outputDirectory
+        var taken = DailyPlan.takenNames((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+        taken.formUnion(DailyPlan.takenNames(Backup.shared.roadKMLNames()))
+        taken.formUnion(plan.reservedOutputs(except: entry.id))
+        // Ask the file system too, in case the folder listing failed.
+        let exists = { (name: String) in FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) }
+        if let kept = entry.output, !taken.contains(kept.lowercased()), !exists(kept) { return kept }
+        return DailyPlan.uniqueName(DailyPlan.preferredStem(day: entry.day, recording: recording), taken: taken, exists: exists)
+    }
+
+    private func start(_ entry: DailyPlan.Entry) {
         let jobs = RoadJobs.shared
-        let points = DailyPlan.points(on: day, from: recordings(on: day))
-        guard points.count >= 2 else {
-            plan.finished(day)
+        let day = entry.day
+        guard let recording = entry.recording else {
+            // Queued by an earlier version for the whole day: one map per recording instead.
+            plan.split(entry.id, into: recordings(on: day))
             save()
             kick()
             return
         }
-        let input = jobs.inputsDirectory.appendingPathComponent("daily_\(day)_Records.json")
+        let dayPoints = DailyPlan.points(on: day, from: [points(of: recording, on: day)])
+        guard dayPoints.count >= 2 else {
+            plan.finished(entry.id)
+            save()
+            kick()
+            return
+        }
+        let name = outputName(for: entry, recording: recording)
+        plan.setOutput(name, for: entry.id)
+        save()
+        let stem = (name as NSString).deletingPathExtension
+        let input = jobs.inputsDirectory.appendingPathComponent("daily_\(stem)_Records.json")
         do {
-            try Exporter.records([ExportTrack(name: "roads \(day)", points: points)]).write(to: input, options: .atomic)
+            try Exporter.records([ExportTrack(name: stem, points: dayPoints)]).write(to: input, options: .atomic)
         } catch {
-            note("\(day): couldn't prepare the day's points (\(error.localizedDescription)).")
-            plan.finished(day)
+            note("\(name): couldn't prepare the recording's points (\(error.localizedDescription)).")
+            plan.finished(entry.id)
             save()
             return
         }
@@ -100,47 +134,47 @@ final class DailyRoads: ObservableObject {
         form.files = [jobs.argPath(input)]
         form.dateKind = .day
         form.day = Self.date(day)
-        form.shape.output = Self.outputName(day)
+        form.shape.output = name
         if form.modes.isEmpty { form.drive = true; form.walk = true; form.bike = true; form.other = true }
         let (argv, problems) = form.build()
         guard problems.isEmpty else {
-            note("\(day): the GPS history settings in the Roads tab have a problem: \(problems[0].message)")
-            plan.finished(day)
+            note("\(name): the GPS history settings in the Roads tab have a problem: \(problems[0].message)")
+            plan.finished(entry.id)
             save()
             return
         }
-        let label = "Daily roads: " + Self.date(day).formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
-        runningDay = day
+        let label = "Daily roads: " + dayPoints[0].time.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        runningID = entry.id
         let started = jobs.run(argv, label: label, automatic: true) { job in
-            DailyRoads.shared.finished(day, job: job, input: input)
+            DailyRoads.shared.finished(entry, recording: recording, name: name, job: job, input: input)
         }
-        if started == nil { runningDay = nil }
+        if started == nil { runningID = nil }
     }
 
-    private func finished(_ day: String, job: RoadJob, input: URL) {
-        runningDay = nil
+    private func finished(_ entry: DailyPlan.Entry, recording: String, name: String, job: RoadJob, input: URL) {
+        runningID = nil
         switch job.status {
         case .done:
-            plan.finished(day)
+            plan.finished(entry.id)
             try? FileManager.default.removeItem(at: input)
-            note("\(day): saved \(Self.outputName(day)).")
-            addPhotos(day)
+            note("Saved \(name).")
+            addPhotos(day: entry.day, recording: recording, name: name)
         case .failed where (job.errorLine ?? "").contains("No trips found"):
-            // Nothing to map that day (only standing still, or only trip types switched off).
-            plan.finished(day)
+            // Nothing to map (only standing still, or only trip types switched off).
+            plan.finished(entry.id)
             try? FileManager.default.removeItem(at: input)
-            note("\(day): no trips to map.")
+            note("\(name): no trips to map.")
         case .failed:
-            if plan.failed(day, now: Date()) {
-                note("\(day): failed (\(job.errorLine ?? "error")); will try again later.")
+            if plan.failed(entry.id, now: Date()) {
+                note("\(name): failed (\(job.errorLine ?? "error")); will try again later.")
             } else {
-                note("\(day): failed three times (\(job.errorLine ?? "error")). Run it from the Roads tab when the map servers are less busy.")
+                note("\(name): failed three times (\(job.errorLine ?? "error")). Run it from the Roads tab when the map servers are less busy.")
                 try? FileManager.default.removeItem(at: input)
             }
         case .cancelled:
-            plan.finished(day)
+            plan.finished(entry.id)
             try? FileManager.default.removeItem(at: input)
-            note("\(day): cancelled.")
+            note("\(name): cancelled.")
         case .running:
             return
         }
@@ -148,37 +182,34 @@ final class DailyRoads: ObservableObject {
         kick()
     }
 
-    /// Adds a Photos folder to the day's roads file: every photo and video taken during that
-    /// day's recordings, named by file (IMG_1234), at its own location, or on the recording
+    /// Adds a Photos folder to the recording's roads file: every photo and video taken during
+    /// it that day, named by file (IMG_1234), at its own location, or on the recording
     /// between the points just before and after it when it has none.
-    private func addPhotos(_ day: String) {
-        let url = RoadJobs.shared.outputDirectory.appendingPathComponent(Self.outputName(day))
+    private func addPhotos(day: String, recording: String, name: String) {
+        let url = RoadJobs.shared.outputDirectory.appendingPathComponent(name)
         guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let dayRecordings = recordings(on: day)
-        let name = Self.outputName(day)
+        let mine = points(of: recording, on: day)
         Task {
             var access = PhotoLibrary.currentAccess
             if access == nil, UIApplication.shared.applicationState == .active {
                 access = await PhotoLibrary.requestAccess()
             }
             guard access == .allowed || access == .limited else {
-                note("\(day): saved \(name); no photo markers, because Waytrace can't see your photos (Settings › Privacy & Security › Photos).")
+                note("Saved \(name); no photo markers, because Waytrace can't see your photos (Settings › Privacy & Security › Photos).")
                 return
             }
             let result = await Task.detached(priority: .utility) { () -> String? in
-                var photos: [PhotoInfo] = []
-                for rec in dayRecordings {
-                    if let w = PhotoPlacer.window(rec) { photos += PhotoLibrary.items(from: w.lowerBound, to: w.upperBound) }
-                }
-                let markers = PhotoPlacer.place(photos, onEach: dayRecordings).markers
-                guard !markers.isEmpty else { return "no photos taken during the recordings" }
+                guard let w = PhotoPlacer.window(mine) else { return "no photos taken during the recording" }
+                let photos = PhotoLibrary.items(from: w.lowerBound, to: w.upperBound)
+                let markers = PhotoPlacer.place(photos, onEach: [mine]).markers
+                guard !markers.isEmpty else { return "no photos taken during the recording" }
                 guard let text = try? String(contentsOf: url, encoding: .utf8),
-                      let out = Exporter.addingFolder(Exporter.dailyPhotoFolder(markers, points: dayRecordings.flatMap { $0 }), to: text)
+                      let out = Exporter.addingFolder(Exporter.dailyPhotoFolder(markers, points: mine), to: text)
                 else { return "couldn't add the photo markers" }
                 do { try out.write(to: url, atomically: true, encoding: .utf8) } catch { return "couldn't add the photo markers" }
                 return "\(markers.count) photo marker(s)"
             }.value
-            note("\(day): saved \(name) with \(result ?? "photos").")
+            note("Saved \(name) with \(result ?? "photos").")
             RoadJobs.shared.refreshFiles()
             Backup.shared.backUp(reason: "photo markers added")
         }

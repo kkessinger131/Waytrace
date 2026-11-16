@@ -5,7 +5,7 @@ import Combine
 /// they're safe if the phone is lost or the app has to be deleted.
 ///
 ///   <folder>/Recordings/2026-11-08_09-12-44.csv   the raw recordings (Tracks)
-///   <folder>/Road KML/roads_2026-11-08.kml        every KML Road to KML made
+///   <folder>/Road KML/roads_2026-11-08_09-12-44.kml   every KML Road to KML made
 ///
 /// Copies are made every 15 minutes while recording, when a recording stops, after each Road
 /// to KML run, and with "Back up now". A file is only copied when it has changed. Nothing is
@@ -90,6 +90,17 @@ final class Backup: ObservableObject {
                 if b.again { b.again = false; b.backUp(reason: reason) }
             }
         }
+    }
+
+    /// The file names in the backup's Road KML folder (including files iCloud keeps only in
+    /// the cloud, listed as ".name.icloud"), so a new road map never takes the name of one
+    /// that's there and the backup copy is never replaced, even if it's gone from the phone.
+    func roadKMLNames() -> [String] {
+        guard isSet, let folder = resolve() else { return [] }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        let dir = folder.appendingPathComponent("Road KML", isDirectory: true)
+        return (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
     }
 
     private func note(_ s: String) {

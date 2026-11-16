@@ -160,11 +160,11 @@ enum Exporter {
 
     // MARK: - Photo markers for the daily road map
 
-    /// A "Photos" folder for roads_YYYY-MM-DD.kml: one marker per photo or video taken during
-    /// the day's recordings, named by its file (IMG_1234), at the photo's own location, or for
-    /// one without a location, on the recording between the points just before and after it.
-    /// Each marker records the times of those two points, so the photos slot into the day's
-    /// sequence of points by time.
+    /// A "Photos" folder for a recording's roads_YYYY-MM-DD_HH-MM-SS.kml: one marker per photo
+    /// or video taken during the recording, named by its file (IMG_1234), at the photo's own
+    /// location, or for one without a location, on the recording between the points just
+    /// before and after it. Each marker records the times of those two points, so the photos
+    /// slot into the recording's sequence of points by time.
     static func dailyPhotoFolder(_ markers: [PhotoMarker], points: [TrackPoint]) -> String {
         let local = TimeFormats.local()
         let clock = DateFormatter()

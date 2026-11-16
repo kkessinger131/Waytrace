@@ -187,22 +187,31 @@ isn't stored):
 
 ## Daily road map
 
-Each time you press **STOP**, every day in that recording is run through Road
-to KML with the **GPS history** settings from the Roads tab, into
-`Road KML/roads_YYYY-MM-DD.kml`: one file per day, with all of that day's
-recordings together. There's deliberately no running "everywhere" map; that
-stays in your QGIS workflow. A recording that runs past midnight maps the
+Each time you press **STOP**, that recording is run through Road to KML with
+the **GPS history** settings from the Roads tab, into its own file named after
+the recording: `Road KML/roads_YYYY-MM-DD_HH-MM-SS.kml` (recording
+`2026-11-08_09-12-44.csv` gives `roads_2026-11-08_09-12-44.kml`). Two
+recordings on one day give two files. A recording that runs past midnight
+without "Start a new file each day" gives one file per day; the later part is
+named for that day from midnight (`roads_2026-11-09_00-00-00.kml`).
+
+A file name is never reused, so one map can never overwrite another: before a
+run, Waytrace checks the Road KML folder on the phone, the backup folder (even
+for files you've since cleared from the phone, and files iCloud keeps only in
+the cloud), and the other maps waiting to run. If the name is taken, `_2`,
+`_3`… is added. There's deliberately no running "everywhere" map; that stays
+in your QGIS workflow. A recording that runs past midnight maps the
 finished day the next time you open the app (heavy work never runs in the
 background alongside a recording). If the map servers are busy, it tries again
-after 30 minutes and after 2 hours, then leaves the day for you to run by hand.
+after 30 minutes and after 2 hours, then leaves it for you to run by hand.
 Turn it off in Settings › Daily road map.
 
-Each daily file also gets a **Photos** folder: a camera marker for every photo
-and video taken during that day's recordings, named by its file (`IMG_1234`).
+Each file also gets a **Photos** folder: a camera marker for every photo and
+video taken during that recording (on that day), named by its file (`IMG_1234`).
 A photo with its own location sits there; one without (yellow) is placed on the
 recording between the points just before and after it. Each marker also
 records the times of those two points (`point_before_time`,
-`point_after_time`), so the photos slot into the day's sequence of points.
+`point_after_time`), so the photos slot into the recording's sequence of points.
 
 A run keeps going when you switch to another app: while it works, location
 updates at cell-tower accuracy (no GPS) keep Waytrace running, and the engine
