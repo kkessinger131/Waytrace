@@ -118,7 +118,7 @@ struct ExportSheet: View {
         let result = await Task.detached(priority: .userInitiated) { () -> (URL?, String) in
             let store = TrackStore.shared
             let tracks = sessions.sorted { $0.name < $1.name }
-                .map { ExportTrack(name: $0.name, points: store.loadPoints(from: $0.url)) }
+                .map { ExportTrack(name: $0.name, points: store.loadPoints(from: $0.url), gaps: RecordingLog.load(for: $0.url).gaps) }
             var markers: [[PhotoMarker]] = []
             var own = 0, byTime = 0, unplaced = 0
             for t in tracks {
@@ -152,7 +152,7 @@ struct ExportSheet: View {
             let store = TrackStore.shared
             let tracks = sessions
                 .sorted { $0.name < $1.name }
-                .map { ExportTrack(name: $0.name, points: store.loadPoints(from: $0.url)) }
+                .map { ExportTrack(name: $0.name, points: store.loadPoints(from: $0.url), gaps: RecordingLog.load(for: $0.url).gaps) }
             var made: [ExportFormat: URL] = [:]
             var failure: String?
             for format in ExportFormat.allCases {

@@ -80,10 +80,13 @@ time. Reinstalling over the app keeps your recordings; deleting it erases them.
 4. **Check it.** Right-click the tray icon › **Show Daemon** lists the app and
    the days it has left.
 
-From then on, whenever the PC is on, the daemon is running and the phone is on
-the same Wi-Fi (with any VPN off), the app is re-signed when about 2 days
-remain. If Waytrace's 24-hour warning arrives, the refresh hasn't happened:
-plug the phone in, or check that the PC is awake and the daemon is running.
+The daemon only refreshes an app that is close to expiring (about 2 days
+left), and only while it can see the phone: the PC awake, the daemon running,
+and the phone on the same Wi-Fi (any VPN off) **with its screen on**, or
+plugged in by USB. A phone that sits locked in a pocket all day may never be
+seen; unlocking it near the PC for a minute, or charging it from the PC, gives
+the daemon its chance. When it works, Waytrace says so (Settings › Last
+re-signed). If the 24-hour warning arrives, the refresh hasn't happened yet.
 
 **By hand:** drag the same Waytrace.ipa into Sideloadly again and click Start.
 

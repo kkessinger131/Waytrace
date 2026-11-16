@@ -112,7 +112,10 @@ struct SettingsView: View {
                         }
                     }
                     if SigningInfo.current != nil {
-                        LabeledContent("Expiry warning", value: reminderText)
+                        LabeledContent("Expiry warnings", value: reminderText)
+                    }
+                    if let r = notifier.resigned {
+                        LabeledContent("Last re-signed", value: r.at.formatted(date: .abbreviated, time: .shortened))
                     }
                     if let problem = notifier.problem {
                         Text(problem).font(.footnote).foregroundStyle(.red)
@@ -121,7 +124,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Notifications and signing")
                 } footer: {
-                    Text("A notification comes when a run finishes, saying if anything went wrong (only if you've left the app, or for the automatic daily map). Another comes 24 hours before this install stops opening; “Expiry warning” shows when iOS has it set for. If it says Not set, open the app once more, or send a test. With Sideloadly's automatic refresh (see the Waytrace README), your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps your recordings; deleting it erases them.")
+                    Text("A notification comes when a run finishes, saying if anything went wrong (only if you've left the app, or for the automatic daily map). Two more come before this install stops opening: 24 hours before, and a last call 3 hours before; “Expiry warnings” shows when iOS has them set for. “Last re-signed” shows when a Sideloadly refresh (or reinstall) last renewed it. If it says Not set, open the app once more, or send a test. With Sideloadly's automatic refresh (see the Waytrace README), your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps your recordings; deleting it erases them.")
                 }
 
                 Section {
@@ -160,8 +163,10 @@ struct SettingsView: View {
     }
 
     private var reminderText: String {
-        if let at = notifier.reminderAt {
-            return at.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        if !notifier.reminderDates.isEmpty {
+            return notifier.reminderDates
+                .map { $0.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()) }
+                .joined(separator: " and ")
         }
         return notifier.permission == .denied ? "Can't be shown (notifications off)" : "Not set"
     }

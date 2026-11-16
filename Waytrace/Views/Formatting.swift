@@ -31,6 +31,11 @@ enum Fmt {
         return imperial ? String(format: "%.0f ft", metres * 3.28084) : String(format: "%.0f m", metres)
     }
 
+    static func duration(_ seconds: TimeInterval) -> String {
+        let m = Int((seconds / 60).rounded())
+        return m < 60 ? "\(m) min" : "\(m / 60) h \(m % 60) min"
+    }
+
     static func distance(_ metres: Double) -> String {
         if imperial {
             let miles = metres / 1609.344

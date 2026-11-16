@@ -6,6 +6,7 @@ struct SessionDetailView: View {
     @EnvironmentObject private var recorder: LocationRecorder
     @State private var points: [TrackPoint] = []
     @State private var loaded = false
+    @State private var log = RecordingLog()
     @State private var showExport = false
     @State private var showRoadRun = false
     @State private var roadsMessage: String?
@@ -80,6 +81,38 @@ struct SessionDetailView: View {
                 }
             }
 
+            if !log.gaps.isEmpty {
+                Section {
+                    ForEach(Array(log.gaps.enumerated()), id: \.offset) { _, gap in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(gap.from.formatted(date: .omitted, time: .shortened)) – \(gap.to.formatted(date: .omitted, time: .shortened))")
+                                .font(.subheadline.weight(.semibold))
+                            Text(Interruption.describe(gap, distance: Fmt.distance)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Gaps")
+                } footer: {
+                    Text("Times Waytrace wasn't running. Exported KML files show each one as a yellow line from the last point before to the first one after.")
+                }
+            }
+
+            if !log.rests.isEmpty {
+                Section {
+                    LabeledContent("GPS rested", value: "\(log.rests.count)× · \(Fmt.duration(log.restedTime)) in all")
+                    LabeledContent("Woken by", value: log.wakeCounts.map { "\($0.reason) \($0.count)" }.joined(separator: " · "))
+                    if !log.lateWakes.isEmpty {
+                        Text("\(log.lateWakes.count) time(s) only the 3-minute GPS check noticed you'd left: up to 3 minutes of track before \(log.lateWakes.compactMap { $0.to?.formatted(date: .omitted, time: .shortened) }.joined(separator: ", ")) may be missing. If this happens often, tell Claude.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text("Battery saver")
+                } footer: {
+                    Text("Steps, the motion sensor or the geofence should wake the GPS within seconds of setting off.")
+                }
+            }
+
             Section {
                 Button {
                     showExport = true
@@ -118,6 +151,7 @@ struct SessionDetailView: View {
         }
         .task(id: recorder.libraryRevision) {
             points = TrackStore.shared.loadPoints(from: session.url)
+            log = RecordingLog.load(for: session.url)
             loaded = true
         }
     }

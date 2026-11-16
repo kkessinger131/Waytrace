@@ -44,6 +44,14 @@ final class LocationRecorder: NSObject, ObservableObject {
     @Published private(set) var restingSince: Date?
     /// The last rest or wake, for the status card ("GPS woke at 14:02: 12 steps").
     @Published private(set) var restNote: String?
+    /// Shown after the recording picked up again from a gap ("Resumed at 14:31 after…").
+    @Published private(set) var resumeNote: String?
+    /// Gaps and GPS rests of the current recording (saved as <name>.log.json).
+    private var log = RecordingLog()
+    /// The recording whose latest gap still needs its first point after.
+    private var gapAwaitingPoint: URL?
+    /// The install's signing expiry, read once (a reinstall restarts the app anyway).
+    private let launchExpiry = SigningInfo.current
 
     private let manager = CLLocationManager()
     private let store = TrackStore.shared
@@ -65,6 +73,8 @@ final class LocationRecorder: NSObject, ObservableObject {
     private enum Key {
         static let activeSession = "recorder.activeSession"
         static let askedForAlways = "recorder.askedForAlways"
+        static let heartbeat = "recorder.heartbeat"
+        static let waitedForAccess = "recorder.waitedForAccess"
     }
 
     private override init() {
@@ -95,6 +105,10 @@ final class LocationRecorder: NSObject, ObservableObject {
         guard isRecording else { return }
         stopRestWatch()
         stopUpdates()
+        if let url = sessionURL { log.save(for: url) }
+        UserDefaults.standard.removeObject(forKey: Key.heartbeat)
+        gapAwaitingPoint = nil
+        resumeNote = nil
         let finished = sessionURL
         closeWriter()
         sessionURL = nil
@@ -103,6 +117,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         guard let finished else { return }
         if points.isEmpty {
             try? FileManager.default.removeItem(at: finished)
+            try? FileManager.default.removeItem(at: RecordingLog.url(for: finished))
             libraryRevision += 1
         } else {
             annotateActivity(of: finished, thenMapDays: DailyPlan.days(of: points))
@@ -142,7 +157,10 @@ final class LocationRecorder: NSObject, ObservableObject {
         }
         switch manager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse: break
-        default: return // keep the flag; authorizationChanged() retries when access returns
+        default:
+            // Keep the flag; authorizationChanged() retries when access returns.
+            UserDefaults.standard.set(true, forKey: Key.waitedForAccess)
+            return
         }
 
         let existing = store.loadPoints(from: url)
@@ -163,7 +181,74 @@ final class LocationRecorder: NSObject, ObservableObject {
         policy = SamplingPolicy.current
         startUpdates()
         isRecording = true
+        logGapOnResume(url: url, lastPoint: existing.last)
         startRestWatch()
+    }
+
+    // MARK: - Gaps: the times Waytrace wasn't running
+
+    /// The recording picked up again after Waytrace had stopped (phone off, iOS closed it,
+    /// re-signed…). Notes the gap in the recording's log, says why as best it can tell, and
+    /// for a long gap sends a notification.
+    private func logGapOnResume(url: URL, lastPoint: TrackPoint?) {
+        log = RecordingLog.load(for: url)
+        let d = UserDefaults.standard
+        let beat = d.data(forKey: Key.heartbeat).flatMap { try? JSONDecoder().decode(Interruption.Heartbeat.self, from: $0) }
+        let waited = d.bool(forKey: Key.waitedForAccess)
+        d.removeObject(forKey: Key.waitedForAccess)
+        let now = Date()
+        let lastAlive = max(beat?.time ?? .distantPast, lastPoint?.time ?? .distantPast)
+        // A rest that was open when Waytrace stopped ended then.
+        if let i = log.rests.indices.last, log.rests[i].to == nil {
+            log.rests[i].to = lastAlive > .distantPast ? lastAlive : now
+            log.rests[i].wokeBy = "recording interrupted"
+        }
+        if lastAlive > .distantPast, now.timeIntervalSince(lastAlive) >= RecordingLog.minGap {
+            let cause = Interruption.cause(last: beat, bootNow: Self.bootTime(), expiryNow: launchExpiry,
+                                           buildNow: Self.build, waitedForLocationAccess: waited, now: now)
+            var gap = RecordingLog.Gap(from: lastAlive, to: now, cause: cause)
+            gap.before = lastPoint.map { .init(latitude: $0.latitude, longitude: $0.longitude, time: $0.time) }
+            log.gaps.append(gap)
+            gapAwaitingPoint = url
+            resumeNote = "Resumed at \(now.formatted(date: .omitted, time: .shortened)) after a " + Interruption.describe(gap, distance: Fmt.distance)
+            if gap.duration >= RecordingLog.notifyGap { Notifier.shared.recordingResumed(after: gap) }
+        }
+        log.save(for: url)
+        writeHeartbeat()
+    }
+
+    /// Saved every 15 s while recording, so a restart can tell when Waytrace was last running
+    /// and what changed since.
+    private func writeHeartbeat() {
+        let beat = Interruption.Heartbeat(time: Date(), boot: Self.bootTime(), expiry: launchExpiry, build: Self.build)
+        if let data = try? JSONEncoder().encode(beat) { UserDefaults.standard.set(data, forKey: Key.heartbeat) }
+    }
+
+    /// The first point saved after a gap completes it (how far you moved meanwhile).
+    private func completeGap(with point: TrackPoint) {
+        guard let url = gapAwaitingPoint else { return }
+        gapAwaitingPoint = nil
+        var l = url == sessionURL ? log : RecordingLog.load(for: url)
+        guard let i = l.gaps.indices.last, l.gaps[i].after == nil else { return }
+        l.gaps[i].after = .init(latitude: point.latitude, longitude: point.longitude, time: point.time)
+        l.save(for: url)
+        if url == sessionURL { log = l }
+        if let g = l.gaps.last, resumeNote != nil {
+            resumeNote = "Resumed at \(g.to.formatted(date: .omitted, time: .shortened)) after a " + Interruption.describe(g, distance: Fmt.distance)
+        }
+    }
+
+    private static func bootTime() -> Date {
+        var tv = timeval()
+        var size = MemoryLayout<timeval>.size
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, u_int(mib.count), &tv, &size, nil, 0) == 0 else { return .distantPast }
+        return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1_000_000)
+    }
+
+    private static var build: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
     }
 
     // MARK: - Session files
@@ -193,7 +278,9 @@ final class LocationRecorder: NSObject, ObservableObject {
         points = []
         stats = Stats()
         segment = 0
+        log = RecordingLog()
         UserDefaults.standard.set(url.lastPathComponent, forKey: Key.activeSession)
+        writeHeartbeat()
         libraryRevision += 1
         return true
     }
@@ -254,7 +341,10 @@ final class LocationRecorder: NSObject, ObservableObject {
         tickTimer?.invalidate()
         tickTimer = nil
         motion.stop()
-        if stillness?.isResting == true { setPrecise() }
+        if stillness?.isResting == true {
+            setPrecise()
+            log.restEnded(at: Date(), wokeBy: "recording stopped")
+        }
         stillness = nil
         stopRestRegion()
         restingSince = nil
@@ -262,6 +352,7 @@ final class LocationRecorder: NSObject, ObservableObject {
 
     private func tick() {
         guard isRecording else { return }
+        writeHeartbeat()
         if let e = stillness?.tick(Date()) { handle(e) }
         Backup.shared.recordingTick()
     }
@@ -280,6 +371,8 @@ final class LocationRecorder: NSObject, ObservableObject {
         case .rest:
             setCoarse()
             restingSince = Date()
+            log.restStarted(at: Date())
+            if let url = sessionURL { log.save(for: url) }
             restNote = "GPS resting since \(clock): you've stayed in one place."
             startRestRegion()
         case .startCheck:
@@ -295,6 +388,8 @@ final class LocationRecorder: NSObject, ObservableObject {
                 restNote = "GPS woke at \(clock) (\(reason))."
             }
             restingSince = nil
+            log.restEnded(at: Date(), wokeBy: reason)
+            if let url = sessionURL { log.save(for: url) }
             stopRestRegion()
             // Start sampling afresh: the next good fix is saved straight away.
             updatesStartedAt = Date()
@@ -450,6 +545,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         points.append(point)
         lastSaved = location
         stats.saved += 1
+        completeGap(with: point)
     }
 
     private func authorizationChanged() {

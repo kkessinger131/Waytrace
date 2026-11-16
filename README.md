@@ -197,6 +197,13 @@ background alongside a recording). If the map servers are busy, it tries again
 after 30 minutes and after 2 hours, then leaves the day for you to run by hand.
 Turn it off in Settings › Daily road map.
 
+Each daily file also gets a **Photos** folder: a camera marker for every photo
+and video taken during that day's recordings, named by its file (`IMG_1234`).
+A photo with its own location sits there; one without (yellow) is placed on the
+recording between the points just before and after it. Each marker also
+records the times of those two points (`point_before_time`,
+`point_after_time`), so the photos slot into the day's sequence of points.
+
 A run keeps going when you switch to another app: while it works, location
 updates at cell-tower accuracy (no GPS) keep Waytrace running, and the engine
 paces itself in the background so iOS doesn't stop it for using too much CPU.
@@ -212,10 +219,27 @@ maps into `Road KML/` every 15 minutes while recording, at STOP, after each
 Road to KML run, and with **Back up now**. Only changed files are copied, and
 nothing is ever deleted from the backup.
 
+## Gaps and the battery saver log
+
+If Waytrace stops while recording (the phone was off, iOS closed it, a Sideloadly
+refresh restarted it…), the recording picks up again when it can. The gap is
+noted in the recording's log (`<name>.log.json` next to the CSV): when, how long,
+the likely cause, and how far you moved meanwhile. The recording's page lists
+the gaps, exported KML shows each as a yellow line between the points either
+side, and a gap of 10 minutes or more sends a notification when recording
+resumes.
+
+The same log keeps each GPS rest and what woke it. The recording's page sums
+them up and flags any wake where only the 3-minute GPS check noticed you'd
+left (the one case where a little track before it could be missing).
+
 ## Signing reminder
 
 A free Apple ID signs the app for 7 days. Settings shows when this install
-expires, and a notification comes 24 hours before. Set up Sideloadly's
+expires. Notifications come 24 hours before and again 3 hours before, and the
+Record screen shows a banner in the last 24 hours. When a refresh renews the
+app, Settings shows when, and if it happened in the background a notification
+says so. Set up Sideloadly's
 automatic refresh ([INSTALL_WITHOUT_MAC.md](INSTALL_WITHOUT_MAC.md), part D) and
 your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps
 your recordings; deleting it erases them (another reason for the backup).

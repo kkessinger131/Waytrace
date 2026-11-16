@@ -65,16 +65,22 @@ final class DailyRoads: ObservableObject {
         }
     }
 
-    private func start(_ day: String) {
-        let jobs = RoadJobs.shared
+    /// Each recording's points from `day` (recordings that started that day or up to two
+    /// days before, in case one ran past midnight).
+    private func recordings(on day: String) -> [[TrackPoint]] {
         let store = TrackStore.shared
-        // Recordings that can hold points of this day: started that day or up to two days before.
-        let recordings = store.sessions().filter { s in
+        return store.sessions().filter { s in
             guard let start = s.startDate else { return true }
             let d = DailyPlan.dayString(start)
             return d <= day && d >= DailyPlan.dayString(Self.date(day).addingTimeInterval(-2 * 86400))
-        }.map { store.loadPoints(from: $0.url) }
-        let points = DailyPlan.points(on: day, from: recordings)
+        }
+        .map { store.loadPoints(from: $0.url).filter { DailyPlan.dayString($0.time) == day } }
+        .filter { !$0.isEmpty }
+    }
+
+    private func start(_ day: String) {
+        let jobs = RoadJobs.shared
+        let points = DailyPlan.points(on: day, from: recordings(on: day))
         guard points.count >= 2 else {
             plan.finished(day)
             save()
@@ -118,6 +124,7 @@ final class DailyRoads: ObservableObject {
             plan.finished(day)
             try? FileManager.default.removeItem(at: input)
             note("\(day): saved \(Self.outputName(day)).")
+            addPhotos(day)
         case .failed where (job.errorLine ?? "").contains("No trips found"):
             // Nothing to map that day (only standing still, or only trip types switched off).
             plan.finished(day)
@@ -139,6 +146,42 @@ final class DailyRoads: ObservableObject {
         }
         save()
         kick()
+    }
+
+    /// Adds a Photos folder to the day's roads file: every photo and video taken during that
+    /// day's recordings, named by file (IMG_1234), at its own location, or on the recording
+    /// between the points just before and after it when it has none.
+    private func addPhotos(_ day: String) {
+        let url = RoadJobs.shared.outputDirectory.appendingPathComponent(Self.outputName(day))
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let dayRecordings = recordings(on: day)
+        let name = Self.outputName(day)
+        Task {
+            var access = PhotoLibrary.currentAccess
+            if access == nil, UIApplication.shared.applicationState == .active {
+                access = await PhotoLibrary.requestAccess()
+            }
+            guard access == .allowed || access == .limited else {
+                note("\(day): saved \(name); no photo markers, because Waytrace can't see your photos (Settings › Privacy & Security › Photos).")
+                return
+            }
+            let result = await Task.detached(priority: .utility) { () -> String? in
+                var photos: [PhotoInfo] = []
+                for rec in dayRecordings {
+                    if let w = PhotoPlacer.window(rec) { photos += PhotoLibrary.items(from: w.lowerBound, to: w.upperBound) }
+                }
+                let markers = PhotoPlacer.place(photos, onEach: dayRecordings).markers
+                guard !markers.isEmpty else { return "no photos taken during the recordings" }
+                guard let text = try? String(contentsOf: url, encoding: .utf8),
+                      let out = Exporter.addingFolder(Exporter.dailyPhotoFolder(markers, points: dayRecordings.flatMap { $0 }), to: text)
+                else { return "couldn't add the photo markers" }
+                do { try out.write(to: url, atomically: true, encoding: .utf8) } catch { return "couldn't add the photo markers" }
+                return "\(markers.count) photo marker(s)"
+            }.value
+            note("\(day): saved \(name) with \(result ?? "photos").")
+            RoadJobs.shared.refreshFiles()
+            Backup.shared.backUp(reason: "photo markers added")
+        }
     }
 
     private func note(_ s: String) {

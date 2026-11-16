@@ -28,15 +28,50 @@ enum SigningInfo {
         return expirationDate(fromProfile: data)
     }
 
-    /// How long before expiry the warning goes out.
+    /// How long before expiry the first warning goes out.
     static let warning: TimeInterval = 24 * 3600
+    /// And the last call.
+    static let lastCall: TimeInterval = 3 * 3600
 
-    /// When to show the warning: 24 hours before expiry; right away if that moment has
-    /// passed but the app still runs; never once it has expired.
+    struct Reminder: Equatable, Sendable {
+        enum Kind: String, Sendable { case day, lastCall }
+        var kind: Kind
+        var at: Date
+    }
+
+    /// The warnings to schedule: 24 hours before expiry (right away instead, once, if the app
+    /// is first opened after that), and a last call 3 hours before. None once it has expired.
+    static func reminders(expiry: Date, now: Date, alreadyWarnedNow: Bool) -> [Reminder] {
+        guard expiry > now else { return [] }
+        var out: [Reminder] = []
+        let day = expiry.addingTimeInterval(-warning)
+        if day > now {
+            out.append(Reminder(kind: .day, at: day))
+        } else if !alreadyWarnedNow {
+            out.append(Reminder(kind: .day, at: now.addingTimeInterval(5)))
+        }
+        let last = expiry.addingTimeInterval(-lastCall)
+        if last > now.addingTimeInterval(60) {
+            out.append(Reminder(kind: .lastCall, at: last))
+        }
+        return out
+    }
+
+    /// When to show the first warning (kept for callers that only want that one).
     static func reminderDate(expiry: Date, now: Date) -> Date? {
-        guard expiry > now else { return nil }
-        let at = expiry.addingTimeInterval(-warning)
-        return at > now ? at : now.addingTimeInterval(5)
+        reminders(expiry: expiry, now: now, alreadyWarnedNow: false).first { $0.kind == .day }?.at
+    }
+
+    /// True in the final 24 hours, when the Record screen shows a banner.
+    static func isExpiringSoon(expiry: Date, now: Date) -> Bool {
+        expiry > now && expiry.timeIntervalSince(now) <= warning
+    }
+
+    /// A newer expiry than the one seen before means the app was re-signed (Sideloadly's
+    /// automatic refresh, or a reinstall).
+    static func wasResigned(previous: Date?, current: Date?) -> Bool {
+        guard let previous, let current else { return false }
+        return current.timeIntervalSince(previous) > 60
     }
 
     static func describe(expiry: Date, now: Date) -> String {

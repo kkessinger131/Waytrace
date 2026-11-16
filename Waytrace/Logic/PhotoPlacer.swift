@@ -102,6 +102,30 @@ enum PhotoPlacer {
         return gap <= maxGap ? (near.latitude, near.longitude, gap) : nil
     }
 
+    /// The recorded points immediately before and after time `t` (either may be missing at
+    /// the ends of a recording).
+    static func neighbors(at t: Date, in pts: [TrackPoint]) -> (before: TrackPoint?, after: TrackPoint?) {
+        let sorted = pts.sorted { $0.time < $1.time }
+        let before = sorted.last { $0.time <= t }
+        let after = sorted.first { $0.time > t }
+        return (before, after)
+    }
+
+    /// Markers for photos taken during any of the recordings (each placed on its own
+    /// recording), oldest first, each photo once.
+    static func place(_ photos: [PhotoInfo], onEach recordings: [[TrackPoint]]) -> (markers: [PhotoMarker], unplaced: [PhotoInfo]) {
+        var markers: [PhotoMarker] = [], unplaced: [PhotoInfo] = [], seen = Set<String>()
+        for rec in recordings {
+            let r = place(photos, on: rec)
+            for m in r.markers where seen.insert(m.photo.id).inserted { markers.append(m) }
+            unplaced += r.unplaced
+        }
+        let placed = Set(markers.map(\.photo.id))
+        var u = Set<String>()
+        unplaced = unplaced.filter { !placed.contains($0.id) && u.insert($0.id).inserted }
+        return (markers.sorted { $0.photo.taken < $1.photo.taken }, unplaced)
+    }
+
     /// After a wait, roughly how long before the next saved point you set off.
     static let leaveTime: TimeInterval = 60
 }

@@ -45,6 +45,8 @@ enum ExportFormat: String, CaseIterable, Identifiable, Sendable {
 struct ExportTrack: Sendable {
     let name: String
     let points: [TrackPoint]
+    /// Times Waytrace wasn't running during the recording (from its log).
+    var gaps: [RecordingLog.Gap] = []
 }
 
 enum Exporter {
@@ -77,6 +79,7 @@ enum Exporter {
         x.append("<name>\(xml(title))</name>")
         x.append(#"<Style id="track"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle></Style>"#)
         x.append(#"<Style id="fix"><IconStyle><scale>0.6</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle><LabelStyle><scale>0</scale></LabelStyle></Style>"#)
+        x.append(#"<Style id="gap"><LineStyle><color>ff00ffff</color><width>2</width></LineStyle><IconStyle><color>ff00ffff</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/caution.png</href></Icon></IconStyle></Style>"#)
 
         for track in tracks where !track.points.isEmpty {
             // Points the motion coprocessor says you were standing still for (and that aren't
@@ -99,6 +102,13 @@ enum Exporter {
                 for p in pts {
                     x.append(placemark(p, visible: visible, local: local, clock: clock))
                 }
+                x.append("</Folder>")
+            }
+            if !track.gaps.isEmpty {
+                x.append("<Folder>")
+                x.append("<name>Gaps (\(track.gaps.count))</name>")
+                x.append("<description>Times Waytrace wasn't running. A yellow line joins the last point before each gap to the first one after.</description>")
+                for g in track.gaps { x.append(gapPlacemark(g, clock: clock)) }
                 x.append("</Folder>")
             }
             x.append("</Folder>")
@@ -127,6 +137,94 @@ enum Exporter {
             x.append("</Placemark>")
         }
         return x
+    }
+
+    private static func gapPlacemark(_ g: RecordingLog.Gap, clock: DateFormatter) -> String {
+        let name = "Gap \(clock.string(from: g.from))–\(clock.string(from: g.to))"
+        var s = "<Placemark><name>\(xml(name))</name><description>\(xml(Interruption.describe(g)))</description>"
+        s += "<TimeSpan><begin>\(TimeFormats.utc.format(g.from))</begin><end>\(TimeFormats.utc.format(g.to))</end></TimeSpan>"
+        s += "<styleUrl>#gap</styleUrl><ExtendedData>"
+        var data = [("from_utc", TimeFormats.utc.format(g.from)), ("to_utc", TimeFormats.utc.format(g.to)),
+                    ("minutes", String(Int((g.duration / 60).rounded()))), ("cause", g.cause)]
+        if let d = g.distance { data.append(("moved_m", String(Int(d.rounded())))) }
+        for (k, v) in data { s += "<Data name=\"\(k)\"><value>\(xml(v))</value></Data>" }
+        s += "</ExtendedData>"
+        if let a = g.before, let b = g.after {
+            s += String(format: "<LineString><tessellate>1</tessellate><coordinates>%.7f,%.7f %.7f,%.7f</coordinates></LineString>",
+                        a.longitude, a.latitude, b.longitude, b.latitude)
+        } else if let p = g.before ?? g.after {
+            s += String(format: "<Point><coordinates>%.7f,%.7f</coordinates></Point>", p.longitude, p.latitude)
+        }
+        return s + "</Placemark>"
+    }
+
+    // MARK: - Photo markers for the daily road map
+
+    /// A "Photos" folder for roads_YYYY-MM-DD.kml: one marker per photo or video taken during
+    /// the day's recordings, named by its file (IMG_1234), at the photo's own location, or for
+    /// one without a location, on the recording between the points just before and after it.
+    /// Each marker records the times of those two points, so the photos slot into the day's
+    /// sequence of points by time.
+    static func dailyPhotoFolder(_ markers: [PhotoMarker], points: [TrackPoint]) -> String {
+        let local = TimeFormats.local()
+        let clock = DateFormatter()
+        clock.locale = Locale(identifier: "en_US_POSIX")
+        clock.dateFormat = "HH:mm:ss"
+        let sorted = points.sorted { $0.time < $1.time }
+
+        var x: [String] = ["<Folder>", "<name>Photos (\(markers.count))</name>"]
+        x.append("<description>Photos and videos taken during the day's recordings. Yellow ones had no location of their own and were placed on the recording by the time they were taken.</description>")
+        x.append(#"<Style id="wtPhoto"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/camera.png</href></Icon></IconStyle></Style>"#)
+        x.append(#"<Style id="wtPhotoByTime"><IconStyle><color>ff00ccff</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/camera.png</href></Icon></IconStyle></Style>"#)
+        for m in markers {
+            let p = m.photo
+            let label = (p.fileName as NSString).deletingPathExtension
+            let (before, after) = PhotoPlacer.neighbors(at: p.taken, in: sorted)
+            let how: String
+            switch m.source {
+            case .photo: how = "location from the \(p.isVideo ? "video" : "photo")"
+            case .track: how = "no location in the \(p.isVideo ? "video" : "photo"), so placed on the recording by time"
+            }
+            var desc = "Taken \(clock.string(from: p.taken)), \(how)."
+            if let b = before, let a = after {
+                desc += " Between the recorded points at \(clock.string(from: b.time)) and \(clock.string(from: a.time))."
+            } else if let b = before {
+                desc += " After the last recorded point (\(clock.string(from: b.time)))."
+            } else if let a = after {
+                desc += " Before the first recorded point (\(clock.string(from: a.time)))."
+            }
+            var data: [(String, String)] = [
+                ("file_name", p.fileName),
+                ("time_local", local.format(p.taken)),
+                ("time_utc", TimeFormats.utc.format(p.taken)),
+                ("location_source", m.source == .photo ? "photo" : "recording"),
+                ("latitude", String(format: "%.7f", m.latitude)),
+                ("longitude", String(format: "%.7f", m.longitude)),
+            ]
+            if let b = before { data.append(("point_before_time", local.format(b.time))) }
+            if let a = after { data.append(("point_after_time", local.format(a.time))) }
+            var s = "<Placemark><name>\(xml(label))</name><description>\(xml(desc))</description>"
+            s += "<TimeStamp><when>\(TimeFormats.utc.format(p.taken))</when></TimeStamp>"
+            s += "<styleUrl>#\(m.source == .photo ? "wtPhoto" : "wtPhotoByTime")</styleUrl><ExtendedData>"
+            for (k, v) in data { s += "<Data name=\"\(k)\"><value>\(xml(v))</value></Data>" }
+            s += String(format: "</ExtendedData><Point><coordinates>%.7f,%.7f</coordinates></Point></Placemark>", m.longitude, m.latitude)
+            x.append(s)
+        }
+        x.append("</Folder>")
+        return x.joined(separator: "\n")
+    }
+
+    /// The KML with `folder` added at the end of its Document (replacing a Photos folder added
+    /// before, so re-running a day doesn't double them). Nil if it isn't a KML document.
+    static func addingFolder(_ folder: String, to kml: String) -> String? {
+        var text = kml
+        if let start = text.range(of: "<!-- waytrace-photos -->"),
+           let end = text.range(of: "<!-- /waytrace-photos -->", range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        guard let close = text.range(of: "</Document>", options: .backwards) else { return nil }
+        text.insert(contentsOf: "<!-- waytrace-photos -->\n" + folder + "\n<!-- /waytrace-photos -->\n", at: close.lowerBound)
+        return text
     }
 
     // MARK: - KML: the line plus a marker at every photo

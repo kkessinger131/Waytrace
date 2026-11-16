@@ -100,11 +100,15 @@ enum TimeFormats {
 enum Geo {
     /// Great-circle distance in metres.
     static func distance(_ a: TrackPoint, _ b: TrackPoint) -> Double {
+        distance(a.latitude, a.longitude, b.latitude, b.longitude)
+    }
+
+    static func distance(_ latA: Double, _ lonA: Double, _ latB: Double, _ lonB: Double) -> Double {
         let r = 6_371_008.8
-        let lat1 = a.latitude * .pi / 180
-        let lat2 = b.latitude * .pi / 180
+        let lat1 = latA * .pi / 180
+        let lat2 = latB * .pi / 180
         let dLat = lat2 - lat1
-        let dLon = (b.longitude - a.longitude) * .pi / 180
+        let dLon = (lonB - lonA) * .pi / 180
         let h = sin(dLat / 2) * sin(dLat / 2) + cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
         return 2 * r * asin(min(1, sqrt(h)))
     }

@@ -41,6 +41,7 @@
 				Logic/BackgroundPacer.swift,
 				Logic/DailyPlan.swift,
 				Logic/PhotoPlacer.swift,
+				Logic/RecordingLog.swift,
 				Logic/RunSummary.swift,
 				Logic/SigningInfo.swift,
 				Logic/StillnessDetector.swift,

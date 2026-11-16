@@ -30,6 +30,10 @@ struct ContentView: View {
                     .listRowInsets(EdgeInsets())
                 }
 
+                if let expiry = SigningInfo.current, SigningInfo.isExpiringSoon(expiry: expiry, now: Date()) {
+                    Section { ExpiryBanner(expiry: expiry) }
+                }
+
                 Section { StatusView() }
 
                 Section("Recordings") {
@@ -163,6 +167,22 @@ private struct ControlBar: View {
     }
 }
 
+/// In the final 24 hours before this install stops opening.
+private struct ExpiryBanner: View {
+    let expiry: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Waytrace stops opening \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "clock.badge.exclamationmark")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.orange)
+            Text("Refresh it with Sideloadly before then. For the automatic refresh, the screen needs to be on, on the same Wi-Fi as your PC (or plug it in). A refresh closes Waytrace, so open it afterwards to check a recording has picked up again.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 private struct StatusView: View {
     @EnvironmentObject private var recorder: LocationRecorder
     @Environment(\.openURL) private var openURL
@@ -188,6 +208,12 @@ private struct StatusView: View {
                 Text("\(recorder.stats.attempts) attempts · \(recorder.stats.skippedTooClose) within \(Int(SamplingPolicy.current.minDistance)) m · \(recorder.stats.skippedPoorAccuracy) low accuracy")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            if recorder.isRecording, let note = recorder.resumeNote {
+                Label(note, systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
             }
 
             if recorder.isRecording, let since = recorder.restingSince {

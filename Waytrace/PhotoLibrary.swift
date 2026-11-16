@@ -6,6 +6,16 @@ import Photos
 enum PhotoLibrary {
     enum Access { case allowed, limited, denied }
 
+    /// The access granted so far, or nil if Waytrace hasn't asked yet.
+    static var currentAccess: Access? {
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized: return .allowed
+        case .limited: return .limited
+        case .notDetermined: return nil
+        default: return .denied
+        }
+    }
+
     static func requestAccess() async -> Access {
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         switch status {
