@@ -96,7 +96,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Backup")
                 } footer: {
-                    Text("Copies recordings into Recordings/ and road maps into Road KML/ inside the folder: every 15 minutes while recording, when you press STOP, and after each Road to KML run. Make a folder such as iCloud Drive › Waytrace and pick it here.")
+                    Text("Copies recordings into Recordings/ (each finished one with a KML of its line, points and photos beside it) and road maps into Road KML/ inside the folder: every 15 minutes while recording, when you press STOP, and after each Road to KML run. Make a folder such as iCloud Drive › Waytrace and pick it here.")
                 }
 
                 Section {

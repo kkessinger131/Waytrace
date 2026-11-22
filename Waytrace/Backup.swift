@@ -5,6 +5,7 @@ import Combine
 /// they're safe if the phone is lost or the app has to be deleted.
 ///
 ///   <folder>/Recordings/2026-11-08_09-12-44.csv   the raw recordings (Tracks)
+///   <folder>/Recordings/2026-11-08_09-12-44.kml   each finished recording's line, points and photos
 ///   <folder>/Road KML/roads_2026-11-08_09-12-44.kml   every KML Road to KML made
 ///
 /// Copies are made every 15 minutes while recording, when a recording stops, after each Road
@@ -77,9 +78,18 @@ final class Backup: ObservableObject {
         }
         working = true
         lastTick = Date()
-        let sources: [(URL, String)] = [(TrackStore.shared.tracksDirectory, "Recordings"),
+        let tracks = TrackStore.shared.tracksDirectory
+        let sources: [(URL, String)] = [(tracks, "Recordings"),
                                          (RoadJobs.shared.outputDirectory, "Road KML")]
+        // Backing up by hand also makes the KML for finished recordings that don't have one
+        // (made before this was added, or the app was closed before it was written).
+        let byHand = reason == "by hand" || reason == "folder chosen"
+        let missing = byHand ? RecordingKML.missing(in: tracks, except: LocationRecorder.shared.currentRecording) : []
         Task.detached(priority: .utility) {
+            if !missing.isEmpty {
+                let photos = await RecordingKML.canSeePhotos(ask: false)
+                for csv in missing { RecordingKML.make(csv, photos: photos) }
+            }
             let result = Backup.copyChanged(sources, into: folder)
             await MainActor.run {
                 let b = Backup.shared

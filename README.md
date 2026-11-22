@@ -230,6 +230,17 @@ maps into `Road KML/` every 15 minutes while recording, at STOP, after each
 Road to KML run, and with **Back up now**. Only changed files are copied, and
 nothing is ever deleted from the backup.
 
+Each finished recording also gets its line KML in `Recordings/`, next to its
+CSV with the same name (`2026-11-08_09-12-44.kml` beside
+`2026-11-08_09-12-44.csv`). It's the same file as Export › KML: the line, a
+marker per point, and the photos and videos taken during the recording as
+points on the line. It's made when you press STOP (or at midnight, with "Start
+a new file each day"), once the walking/driving labels are filled in, and made
+again if you fill the labels in later. **Back up now** also makes one for any
+finished recording that doesn't have one yet, such as those recorded before
+this was added. Deleting a recording on the phone deletes its KML there too,
+but not the backup copies.
+
 ## Gaps and the battery saver log
 
 If Waytrace stops while recording (the phone was off, iOS closed it, a Sideloadly
@@ -317,6 +328,7 @@ stay in step.
 | `LocationRecorder.swift` | Core Location setup, the 10 s / 10 m sampling, relaunch and resume |
 | `SamplingPolicy.swift` | The sampling settings and their defaults |
 | `TrackStore.swift` | One CSV per recording in Documents/Tracks, appended per point |
+| `RecordingKML.swift` | Each finished recording's line KML (with photos), saved beside its CSV for the backup |
 | `TrackPoint.swift` | The point model, CSV format, time formats, distance maths |
 | `MotionAnnotator.swift` | Walking/driving labels from Core Motion history |
 | `Exporter.swift` | KML, Records.json, GPX, CSV and photo-map writers |

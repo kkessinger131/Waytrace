@@ -58,6 +58,8 @@ final class LocationRecorder: NSObject, ObservableObject {
     private var policy = SamplingPolicy.defaults
     private var writer: CSVAppender?
     private var sessionURL: URL?
+    /// The file being recorded into, if any.
+    var currentRecording: URL? { sessionURL }
     private var segment = 0
     private var lastSaved: CLLocation?
     private var latestFix: CLLocation?
@@ -299,7 +301,8 @@ final class LocationRecorder: NSObject, ObservableObject {
         if let finished { annotateActivity(of: finished, thenMapDays: finishedDays) }
     }
 
-    /// Fills in walking/driving labels, then (for a finished recording) queues its days for
+    /// Fills in walking/driving labels, then saves the recording's line KML next to it (for
+    /// the backup's Recordings folder) and, for a recording just finished, queues its days for
     /// the automatic road map; the labels decide which trips are drives and which are walks.
     private func annotateActivity(of url: URL, thenMapDays days: [String] = []) {
         Task {
@@ -312,6 +315,9 @@ final class LocationRecorder: NSObject, ObservableObject {
                 }
             }
             libraryRevision += 1
+            if url != sessionURL, await RecordingKML.write(for: url) {
+                Backup.shared.backUp(reason: "recording KML")
+            }
             if !days.isEmpty {
                 DailyRoads.shared.enqueue(recording: url.deletingPathExtension().lastPathComponent, days: days)
             }

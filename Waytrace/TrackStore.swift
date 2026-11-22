@@ -65,6 +65,7 @@ final class TrackStore: Sendable {
     func delete(_ session: TrackSession) throws {
         try FileManager.default.removeItem(at: session.url)
         try? FileManager.default.removeItem(at: RecordingLog.url(for: session.url))
+        try? FileManager.default.removeItem(at: RecordingKML.url(for: session.url))
     }
 
     static func sessionName(for date: Date) -> String {
