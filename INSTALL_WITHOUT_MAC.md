@@ -38,7 +38,9 @@ account and your Apple ID.
    click **Build Waytrace (.ipa)** › **Run workflow**.
 2. When the run shows a green tick, open it. Under **Artifacts**, download
    **Waytrace-ipa**. It downloads as a .zip; extract it to get
-   **Waytrace.ipa**.
+   **Waytrace.ipa**. Each build is numbered with its run (the number after
+   the # in the run's title), and that number and the commit show in the app
+   under Settings › Version, so you can tell which build is installed.
 
 If the run shows a red ✗, open it and download **build-log**, or copy the
 red error lines from the failed step, and send them to Claude.

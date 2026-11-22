@@ -37,7 +37,9 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Exporter.swift,
+				SamplingPolicy.swift,
 				TrackPoint.swift,
+				Logic/AppVersion.swift,
 				Logic/BackgroundPacer.swift,
 				Logic/DailyPlan.swift,
 				Logic/PhotoPlacer.swift,

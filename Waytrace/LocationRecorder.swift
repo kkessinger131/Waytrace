@@ -10,7 +10,7 @@ import UIKit
 ///   stand still iOS stops waking the app; while you move it delivers roughly one fix a second.
 /// - Every `interval` seconds (15 by default) the recorder makes one save attempt, using the
 ///   newest fix, or a slightly older one from the last 3 s if it is more accurate.
-/// - The attempt is dropped if the fix is within `minDistance` (20 m) of the previously saved
+/// - The attempt is dropped if the fix is within `minDistance` (10 m) of the previously saved
 ///   point, or if its accuracy is worse than `maxAccuracy`. With the drift guard on, a fix
 ///   must also have moved further than its own uncertainty.
 /// - Saved points are appended to a CSV file immediately.
@@ -176,7 +176,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         points = existing
         stats = Stats(saved: existing.count)
         segment = (existing.last?.segment ?? -1) + 1
-        // The 20 m rule still applies against the last point saved before the interruption.
+        // The distance rule still applies against the last point saved before the interruption.
         lastSaved = existing.last.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
         policy = SamplingPolicy.current
         startUpdates()
@@ -246,10 +246,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1_000_000)
     }
 
-    private static var build: String {
-        let info = Bundle.main.infoDictionary ?? [:]
-        return "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
-    }
+    private static var build: String { AppVersion.current.text }
 
     // MARK: - Session files
 

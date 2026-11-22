@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>WaytraceCommit</key>
+	<string>$(WAYTRACE_COMMIT)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -50,18 +52,18 @@
 	</array>
 
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Waytrace records your position after you press RECORD, to build a track of everywhere you go.</string>
+	<string>Waytrace records your position after you press RECORD, tracking everywhere you go.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>With “Always”, Waytrace can restart an interrupted recording by itself, so your track has no gaps if iOS closes the app.</string>
+	<string>With “Always” on, Waytrace can restart an interrupted recording by itself, so your track has no gaps if iOS closes the app.</string>
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
 	<dict>
 		<key>PreciseTrack</key>
 		<string>Precise location is needed to record the exact path you travel.</string>
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>For the photo map: Waytrace looks at when and where your photos and videos were taken during a recording, to put a marker on the map for each. The photos themselves aren't copied or sent anywhere.</string>
+	<string>For the photo map: Waytrace looks at when and where your photos and videos were taken during a recording, to put a marker on the map for each; nothing else is stored or sent anywhere.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Waytrace labels each point as walking, cycling or driving using motion data your iPhone already keeps, and uses it to rest the GPS while you stay in one place.</string>
+	<string>Waytrace labels each point as walking, cycling or driving using motion data from your iPhone and uses it to rest the GPS while you stay in one place.</string>
 
 	<!-- Makes Documents (Tracks/ and Exports/) visible in the Files app. -->
 	<key>UIFileSharingEnabled</key>

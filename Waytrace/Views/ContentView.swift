@@ -176,7 +176,7 @@ private struct ExpiryBanner: View {
             Label("Waytrace stops opening \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "clock.badge.exclamationmark")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.orange)
-            Text("Refresh it with Sideloadly before then. For the automatic refresh, the screen needs to be on, on the same Wi-Fi as your PC (or plug it in). A refresh closes Waytrace, so open it afterwards to check a recording has picked up again.")
+            Text("Refresh it with Sideloadly before then. For the automatic refresh, the screen needs to be on, on the same Wi-Fi as your PC (or plugged in). A refresh closes Waytrace, so open it afterwards to check that recording has picked up again.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -75,18 +75,62 @@ final class PhotoPlacerTests: XCTestCase {
         XCTAssertNotEqual(m.first?.source, .photo)
     }
 
-    func testPhotoKML() {
-        let markers = PhotoPlacer.place([photo(90, "IMG_1.HEIC", lat: 38.95, lon: -77.01), photo(150, "IMG_<2>.HEIC")], on: walk).markers
-        let kml = Exporter.photoKML([ExportTrack(name: "walk", points: walk)], photos: [markers], title: "Walk & photos")
+    func testPhotosInTheLineKML() throws {
+        let markers = PhotoPlacer.place([photo(90, "IMG_0001.HEIC", lat: 38.95, lon: -77.01), photo(150, "IMG_<2>.HEIC")], on: walk).markers
+        let kml = Exporter.kml([ExportTrack(name: "walk", points: walk)], title: "Walk & photos", photos: [markers])
+        XCTAssertNoThrow(try XMLParserCheck.parse(kml))
         XCTAssertTrue(kml.contains("<name>Walk &amp; photos</name>"))
-        XCTAssertTrue(kml.contains("<name>Photos (1)</name>"))
-        XCTAssertTrue(kml.contains("<name>Photos placed by time (1)</name>"))
-        XCTAssertTrue(kml.contains("shapes/camera.png"))
-        XCTAssertTrue(kml.contains("<name>IMG_&lt;2&gt;.HEIC</name>"))
-        XCTAssertTrue(kml.contains("<coordinates>-77.0100000,38.9500000</coordinates>"))
-        XCTAssertTrue(kml.contains("<LineString>"), "the recording's line")
+        XCTAssertTrue(kml.contains("<name>IMG_0001</name>"), "labelled by file name")
+        XCTAssertTrue(kml.contains("<name>IMG_&lt;2&gt;</name>"))
+        XCTAssertTrue(kml.contains("<name>Points and photos (2 photos)</name>"))
+        XCTAssertTrue(kml.contains("#wtPhotoByTime"), "the one placed by time is yellow")
         XCTAssertTrue(kml.contains("location from the photo"))
-        XCTAssertNotNil(try? XMLParserCheck.parse(kml))
+        // A vertex of the line at each photo, in time order: 60 s, photo at 90 s, 120 s, photo at 150 s, 180 s.
+        XCTAssertTrue(kml.contains("-77.0000000,38.9010000 -77.0100000,38.9500000 -77.0000000,38.9020000 -77.0000000,38.9025000 -77.0000000,38.9030000"))
+        // Among the points, between the ones before and after it.
+        let before = try XCTUnwrap(kml.range(of: "<coordinates>-77.0000000,38.9010000</coordinates>")).lowerBound
+        let img = try XCTUnwrap(kml.range(of: "<name>IMG_0001</name>")).lowerBound
+        let after = try XCTUnwrap(kml.range(of: "<coordinates>-77.0000000,38.9020000</coordinates>")).lowerBound
+        XCTAssertTrue(before < img && img < after)
+
+        let plain = Exporter.kml([ExportTrack(name: "walk", points: walk)], title: "Walk")
+        XCTAssertTrue(plain.contains("<name>Points</name>"))
+        XCTAssertFalse(plain.contains("wtPhoto"))
+    }
+
+    func testPhotoVertexJoinsTheNearerStretch() {
+        let pts = [pt(0, 38.9, -77.0, seg: 0), pt(60, 38.901, -77.0, seg: 0), pt(600, 38.95, -77.0, seg: 1)]
+        let m = { (s: TimeInterval) in PhotoMarker(photo: photo(s, "IMG"), latitude: 1, longitude: 2, source: .photo) }
+        XCTAssertEqual(Exporter.lineWithPhotos(pts, [m(30)]).map(\.segment), [0, 0, 0, 1])
+        XCTAssertEqual(Exporter.lineWithPhotos(pts, [m(100)]).first { $0.latitude == 1 }?.segment, 0, "nearer the first stretch")
+        XCTAssertEqual(Exporter.lineWithPhotos(pts, [m(550)]).first { $0.latitude == 1 }?.segment, 1, "nearer the second")
+        XCTAssertEqual(Exporter.lineWithPhotos(pts, [m(700)]).last?.latitude, 1, "after the end, last")
+    }
+}
+
+final class DefaultsAndVersionTests: XCTestCase {
+    func testNewDefaults() {
+        XCTAssertEqual(SamplingPolicy.defaults.interval, 10)
+        XCTAssertEqual(SamplingPolicy.defaults.minDistance, 10)
+        XCTAssertEqual(SamplingPolicy.defaultsSummary, "10 s, 10 m, ±50 m, drift guard on, rest after 5 min")
+    }
+
+    func testOldDefaultsMoveToTheNewOnes() {
+        let k = SamplingPolicy.Key.self
+        XCTAssertEqual(SamplingPolicy.migration(storedInterval: 15, storedMinDistance: 20, version: 0),
+                       [k.interval: 10, k.minDistance: 10])
+        XCTAssertEqual(SamplingPolicy.migration(storedInterval: 30, storedMinDistance: 20, version: 0),
+                       [k.minDistance: 10], "a chosen interval stays")
+        XCTAssertEqual(SamplingPolicy.migration(storedInterval: nil, storedMinDistance: nil, version: 0), [:],
+                       "never set: the new defaults apply anyway")
+        XCTAssertEqual(SamplingPolicy.migration(storedInterval: 15, storedMinDistance: 20, version: 2), [:],
+                       "only once: 15 s chosen after the update stays")
+    }
+
+    func testVersionText() {
+        XCTAssertEqual(AppVersion(version: "1.0", build: "57", commit: "4d5b3a5").text, "1.0 (build 57, commit 4d5b3a5)")
+        XCTAssertEqual(AppVersion(version: "1.0", build: "1", commit: "").text, "1.0 (1)")
+        XCTAssertEqual(AppVersion(version: "1.0", build: "1", commit: "$(WAYTRACE_COMMIT)").text, "1.0 (1)")
     }
 }
 

@@ -1,7 +1,7 @@
 import Foundation
 import Photos
 
-/// Reads the photo library for the photo map: only photos and videos taken during the chosen
+/// Reads the photo library for the KML export and the daily road map: only photos and videos taken during the chosen
 /// recordings (never screenshots), with their own location if they have one.
 enum PhotoLibrary {
     enum Access { case allowed, limited, denied }

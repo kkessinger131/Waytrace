@@ -123,7 +123,8 @@ jobs:
           grep -q "\*\* TEST SUCCEEDED \*\*" app-test.log
 
       # Builds for a real iPhone without signing. Sideloadly signs it with your
-      # Apple ID when it installs, so no certificates are needed here.
+      # Apple ID when it installs, so no certificates are needed here. The build number is
+      # this run's number and the commit is stamped in, so Settings › Version tells installs apart.
       - name: Build for iPhone (unsigned)
         run: |
           set -o pipefail
@@ -133,6 +134,8 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath "$PWD/build" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            WAYTRACE_COMMIT="${GITHUB_SHA::7}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \

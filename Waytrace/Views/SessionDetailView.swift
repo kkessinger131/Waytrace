@@ -102,7 +102,7 @@ struct SessionDetailView: View {
                     LabeledContent("GPS rested", value: "\(log.rests.count)× · \(Fmt.duration(log.restedTime)) in all")
                     LabeledContent("Woken by", value: log.wakeCounts.map { "\($0.reason) \($0.count)" }.joined(separator: " · "))
                     if !log.lateWakes.isEmpty {
-                        Text("\(log.lateWakes.count) time(s) only the 3-minute GPS check noticed you'd left: up to 3 minutes of track before \(log.lateWakes.compactMap { $0.to?.formatted(date: .omitted, time: .shortened) }.joined(separator: ", ")) may be missing. If this happens often, tell Claude.")
+                        Text("\(log.lateWakes.count) time(s) only the 3-minute GPS check noticed you'd left: up to 3 minutes of track before \(log.lateWakes.compactMap { $0.to?.formatted(date: .omitted, time: .shortened) }.joined(separator: ", ")) may be missing. If this happens often, report bug.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }

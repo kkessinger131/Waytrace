@@ -45,7 +45,7 @@ struct SettingsView: View {
                 Section {
                     Toggle("Drift guard", isOn: $driftGuard)
                 } footer: {
-                    Text("Indoors, positions from wifi can wander 20–50 m while you sit still. With the drift guard on, a point is also skipped unless you've moved further than its accuracy (a ±35 m fix needs a 35 m move). Outdoors, with ±3–10 m GPS, the 20 m rule applies exactly as set. Turn it off to use only the 20 m rule.")
+                    Text("Indoors, positions from wifi can wander 20–50 m while you sit still. With the drift guard on, a point is also skipped unless you've moved further than its accuracy (a ±35 m fix needs a 35 m move). Outdoors, with ±3–10 m GPS, the \(Int(minDistance)) m rule applies exactly as set. Turn it off to use only the \(Int(minDistance)) m rule.")
                 }
 
                 Section {
@@ -58,7 +58,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Battery")
                 } footer: {
-                    Text("Only after every sign agrees you've stopped for that long: no movement beyond a small circle, no walking or driving from the motion sensor, and almost no steps. A red light or a traffic jam counts as driving, so the GPS stays on; so does a short break on a hike. The recording never stops: location keeps running on cell towers, which keeps Waytrace alive exactly as before. The GPS comes back after about 10 steps, as soon as the phone senses walking or driving, when you leave the spot (with “Always” location access), or at a quick GPS check every 3 minutes. Applies from the next RECORD.")
+                    Text("Once every sign (no movement beyond a small circle, no walking or driving from the motion sensor, and almost no steps) agrees you've stopped for that long. Red lights or traffic jams count as driving, so GPS stays on; the same for a short break on a hike. The recording never stops. The GPS comes back after about 10 steps, as soon as the phone senses walking or driving, when you leave the spot (“Always” location access required), or at a quick GPS check every 3 minutes. Applies from the next RECORD.")
                 }
 
                 Section {
@@ -72,7 +72,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Daily road map")
                 } footer: {
-                    Text("When you press STOP, the recording is mapped with the GPS history settings from the Roads tab, into its own file named after it: Road KML/roads_YYYY-MM-DD_HH-MM-SS.kml (a part after midnight gets that day's date and 00-00-00). Two recordings on one day make two files. A name already on the phone or in the backup folder is never reused; _2 is added instead, so a map is never overwritten. A recording running past midnight maps the finished day the next time you open the app. If the map servers are busy it tries again after 30 minutes and 2 hours.")
+                    Text("When you press STOP, the recording is mapped using the GPS history settings from the Roads tab, into its own file named after it: Road KML/roads_YYYY-MM-DD_HH-MM-SS.kml (a part after midnight gets that day's date and 00-00-00). A recording running past midnight maps the finished day the next time you open the app. If the map servers are busy it tries again after 30 minutes and again after 2 hours.")
                 }
 
                 Section {
@@ -96,7 +96,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Backup")
                 } footer: {
-                    Text("Copies recordings into Recordings/ and road maps into Road KML/ inside the folder: every 15 minutes while recording, when you press STOP, and after each Road to KML run. Only changed files are copied, and nothing is ever deleted from the backup. Make a folder such as iCloud Drive › Waytrace and pick it here.")
+                    Text("Copies recordings into Recordings/ and road maps into Road KML/ inside the folder: every 15 minutes while recording, when you press STOP, and after each Road to KML run. Make a folder such as iCloud Drive › Waytrace and pick it here.")
                 }
 
                 Section {
@@ -128,7 +128,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button("Restore defaults (15 s, 20 m, ±50 m, drift guard on, rest after 5 min)") {
+                    Button("Restore defaults (\(SamplingPolicy.defaultsSummary))") {
                         interval = SamplingPolicy.defaults.interval
                         minDistance = SamplingPolicy.defaults.minDistance
                         maxAccuracy = SamplingPolicy.defaults.maxAccuracy
@@ -137,6 +137,10 @@ struct SettingsView: View {
                         restWhenStill = SamplingPolicy.defaults.restWhenStill
                         restAfterMinutes = SamplingPolicy.defaults.restAfterMinutes
                     }
+                }
+
+                Section {
+                    LabeledContent("Version", value: AppVersion.current.text)
                 }
             }
             .navigationTitle("Settings")

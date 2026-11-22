@@ -65,7 +65,7 @@ enum PhotoPlacer {
     /// Where the recording puts you at time `t`.
     ///
     /// Inside one stretch of recording, the recorder was running the whole time, so a long
-    /// wait between two points means you stayed put (nothing moved 20 m): you were at the
+    /// wait between two points means you stayed put (nothing moved far enough to save): you were at the
     /// earlier point until about a minute before the later one. Unless the two points are far
     /// apart for the time between them (a tunnel or the subway, where there was no GPS):
     /// then the position is spread evenly over the gap. Before the first point, after the

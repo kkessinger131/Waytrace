@@ -6,11 +6,12 @@ replaces two workflows:
 
 - **Photo EXIF → KML.** Every point has what a photo's GPS EXIF has (time,
   position, accuracy, altitude, speed, direction of travel), with no photos to
-  take. Export → **KML** gives the same line-plus-point-markers file.
+  take. Export → **KML** gives the same line-plus-point-markers file, with
+  the photos you took during the recording as points on the line.
 - **Google Timeline → `road_to_kml.py`.** road_to_kml.py is built into the app
   (the **Roads** tab, and **Map roads traveled** on any recording), so the road
   surfaces come out as KML on the phone. Export → **Records.json** still works
-  with the Python script on a computer. A recording has a point every 15 s
+  with the Python script on a computer. A recording has a point every 10 s
   instead of Timeline's one a minute, plus each point's real accuracy and
   travel mode.
 
@@ -72,13 +73,15 @@ in the same file.
 
 | Rule | Default |
 |---|---|
-| One save attempt every | 15 s |
-| Skip if within this distance of the **last saved** point | 20 m |
+| One save attempt every | 10 s |
+| Skip if within this distance of the **last saved** point | 10 m |
 | Skip if accuracy is worse than | ±50 m |
 | Drift guard: also skip unless the move exceeds the fix's own accuracy | on |
 | New file at local midnight | on |
 
-All of these are in Settings (gear icon) and apply at the next RECORD.
+All of these are in Settings (gear icon) and apply at the next RECORD. (The defaults
+used to be 15 s and 20 m; a phone still on exactly those moves to the new ones
+once, and any other value you chose is kept.)
 
 - **Background.** iOS doesn't allow true background daemons. Instead, the app
   uses the background-location mode, which keeps it alive only while
@@ -104,11 +107,11 @@ All of these are in Settings (gear icon) and apply at the next RECORD.
   you haven't gone anywhere.
 - **No road snapping.** The activity type is `.other`, so a walk across a
   plaza or field is recorded as walked.
-- **Drift guard.** Indoors, wifi positions (±30–65 m) wander more than 20 m
-  while you sit still. In testing, the guard removed about half of that
-  drift; the motion labels catch the rest (see KML below). Outdoors, with
-  ±3–10 m GPS, the 20 m rule applies exactly. Turn it off in Settings to use
-  only the 20 m rule.
+- **Drift guard.** Indoors, wifi positions (±30–65 m) wander 20–50 m while
+  you sit still. In testing, the guard removed about half of that drift; the
+  motion labels catch the rest (see KML below). Outdoors, with ±3–10 m GPS,
+  the distance rule (10 m by default) applies exactly. Turn it off in Settings
+  to use only the distance rule.
 - **Interruptions.** If recording is interrupted (app killed, phone off), it
   resumes in the same file with a new *segment* number. Exports break the
   line there instead of drawing a straight jump across the gap.
@@ -125,11 +128,10 @@ every recording combined.
 
 | Format | Use it for |
 |---|---|
-| **KML** | Google Earth / My Maps. A red line, plus a marker per point; tap one to see its time, accuracy, altitude, speed, course and activity. Points labelled *stationary* (usually indoor drift) go in a hidden "Stationary" folder and are left out of the line. |
+| **KML** | Google Earth / My Maps. A red line, plus a marker per point; tap one to see its time, accuracy, altitude, speed, course and activity. Points labelled *stationary* (usually indoor drift) go in a hidden "Stationary" folder and are left out of the line. Every photo and video taken during the recording (screenshots left out) is a point too, named by its file (`IMG_1234`), and a vertex of the line, slotted in by the time it was taken. A photo with its own location sits there; one without (yellow camera) is placed on the recording by time. Only the recording's own time span is searched (plus 5 minutes either side), so nothing from before you had the app is added. |
 | **Records.json** | `road_to_kml.py --track`. Google Takeout's Records.json format, which `road_tracks.py` already reads, with per-point accuracy and travel mode. |
 | **GPX** | Any GPS tool, and `exiftool -geotag` if you ever want to geotag photos from the track. Accuracy, speed and course are in `<extensions>`. |
 | **CSV** | The raw recording, one row per point. |
-| **Photo map** (tap to make) | The recording's line with a camera marker for every photo and video taken during it (screenshots left out). A photo with its own location goes there; one without is placed on the line by the time it was taken, in a separate yellow folder so it's easy to check. Only the recording's own time span is searched (plus 5 minutes either side), so nothing from before you had the app is added. |
 
 ### Using the Records.json with road_to_kml.py
 
@@ -312,7 +314,7 @@ stay in step.
 
 | File | Role |
 |---|---|
-| `LocationRecorder.swift` | Core Location setup, the 15 s / 20 m sampling, relaunch and resume |
+| `LocationRecorder.swift` | Core Location setup, the 10 s / 10 m sampling, relaunch and resume |
 | `SamplingPolicy.swift` | The sampling settings and their defaults |
 | `TrackStore.swift` | One CSV per recording in Documents/Tracks, appended per point |
 | `TrackPoint.swift` | The point model, CSV format, time formats, distance maths |
@@ -324,7 +326,7 @@ stay in step.
 | `Backup.swift` | Copies to the iCloud Drive folder |
 | `Notifier.swift` | Run-finished and signing-expiry notifications |
 | `RunKeepAlive.swift` | Keeps a Road to KML run alive in the background |
-| `PhotoLibrary.swift` | Reads photo times and places for the photo map |
+| `PhotoLibrary.swift` | Reads photo times and places for the KML and the daily road map |
 | `Views/` | SwiftUI screens: main screen with RECORD/STOP, recording detail, export sheet, settings |
 | `Roads/` | The Roads tab: forms and batch (`RoadForms`), runs and output files (`RoadJobs`), screens (`RoadsView`, `RunView`) |
 | `RoadKit/` | Swift package: the port of road_to_kml.py, road_aliases.py, road_tracks.py, mirror_stats.py and county_fips.py, on GEOS (the library Shapely uses) |
