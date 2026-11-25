@@ -483,11 +483,17 @@ class PlanningTests(unittest.TestCase):
             # Too long to begin with: shortened even when nothing is in the way.
             longer = os.path.basename(rk.unique_output_path(os.path.join(tmp, "y" * 300 + ".kml")))
             self.assertEqual(len(longer), rk.MAX_FILENAME_LEN)
-            # On Windows the whole path stays within MAX_PATH.
-            deep = os.path.join(tmp, "d" * 200)
+            # On Windows the whole path stays within MAX_PATH: in a folder that leaves 60
+            # characters for the name, a 104-character name is shortened to fit.
+            room = 60
+            deep = os.path.join(tmp, "d" * (rk.WINDOWS_MAX_PATH - len(os.path.abspath(tmp)) - 1 - room - 1))
             win = rk.unique_output_path(os.path.join(deep, "z" * 100 + ".kml"), is_windows=True)
-            self.assertLessEqual(len(os.path.abspath(win)), rk.WINDOWS_MAX_PATH)
+            self.assertEqual(len(os.path.abspath(win)), rk.WINDOWS_MAX_PATH)
+            self.assertEqual(len(os.path.basename(win)), room)
             self.assertTrue(win.endswith(".kml"))
+            # Elsewhere the same name is left alone.
+            self.assertEqual(rk.unique_output_path(os.path.join(deep, "z" * 100 + ".kml"), is_windows=False),
+                             os.path.join(deep, "z" * 100 + ".kml"))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
