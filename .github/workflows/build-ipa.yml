@@ -2,8 +2,9 @@ name: Build Waytrace (.ipa)
 
 # Runs on every push to main, or by hand from the Actions tab ("Run workflow").
 # Pushes use Apple Silicon Macs. When GitHub has none free (the job is cancelled with
-# "not acquired by Runner"), run it by hand with runner = macos-26-intel; the .ipa is
-# the same either way.
+# "not acquired by Runner"), intel-fallback.yml starts it again on an Intel Mac by
+# itself; it can also be run by hand with runner = macos-26-intel. The .ipa is the same
+# either way.
 on:
   push:
     branches: [main]
@@ -78,12 +79,14 @@ jobs:
           grep -A 20 "Cross-check against road_to_kml.py" ../roadkit-test.log || true
 
       # ---- The app -------------------------------------------------------------------------
-      # Only the app gets BUNDLE_ID. (Passing it to xcodebuild on the command line
-      # would give it to the GEOS framework inside the app too, and iOS refuses to
-      # install an app whose framework has the app's own ID.)
+      # Only the app gets BUNDLE_ID, and the Control Center extension BUNDLE_ID.controls.
+      # (Passing it to xcodebuild on the command line would give it to the GEOS framework
+      # inside the app too, and iOS refuses to install an app whose framework has the
+      # app's own ID.)
       - name: Set bundle ID
         run: |
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = com.example.waytrace;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/" Waytrace.xcodeproj/project.pbxproj
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = com.example.waytrace.controls;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID.controls;/" Waytrace.xcodeproj/project.pbxproj
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" Waytrace.xcodeproj/project.pbxproj
 
       - name: Restore Xcode builds
@@ -153,6 +156,13 @@ jobs:
             ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$f/Info.plist")
             echo "$(basename "$f"): $ID"
             if [ "$ID" = "$APP_ID" ]; then echo "::error::$(basename "$f") has the app's bundle ID"; exit 1; fi
+          done
+          # App extensions (the Control Center buttons) need an ID that starts with the app's.
+          for x in Payload/Waytrace.app/PlugIns/*.appex; do
+            [ -e "$x" ] || continue
+            ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$x/Info.plist")
+            echo "$(basename "$x"): $ID"
+            case "$ID" in "$APP_ID".*) ;; *) echo "::error::$(basename "$x") needs an ID starting with $APP_ID."; exit 1;; esac
           done
           zip -qry Waytrace.ipa Payload
           ls -lh Waytrace.ipa

@@ -6,17 +6,25 @@ struct WaytraceApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var recorder = LocationRecorder.shared
     @Environment(\.scenePhase) private var scenePhase
+    @State private var tab = "record"
 
     var body: some Scene {
         WindowGroup {
-            TabView {
+            TabView(selection: $tab) {
                 ContentView()
                     .tabItem { Label("Record", systemImage: "record.circle") }
+                    .tag("record")
                 RoadsView()
                     .tabItem { Label("Roads", systemImage: "road.lanes") }
+                    .tag("roads")
+                PhotosView()
+                    .tabItem { Label("Photos", systemImage: "photo.on.rectangle") }
+                    .tag("photos")
             }
             .environmentObject(recorder)
             .preferredColorScheme(.dark)
+            // Control Center's Start and Stop buttons land on the Record tab.
+            .onChange(of: recorder.controlRevision) { _, _ in tab = "record" }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -35,6 +43,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // for a significant-location-change event after it has terminated the app.
         // If a recording was in progress, it picks up exactly where it left off.
         LocationRecorder.shared.resumeIfNeeded()
+        // Control Center, Shortcuts and Siri: Start records at once; Stop asks first.
+        RecordingControl.handler = { action in
+            let recorder = LocationRecorder.shared
+            switch action {
+            case .start: recorder.record()
+            case .stop: recorder.requestStop()
+            }
+            recorder.controlUsed()
+        }
         Notifier.shared.attach()
         Task { await Notifier.shared.scheduleSigningReminder() }
         _ = RoadJobs.shared            // installs the background pacing hook

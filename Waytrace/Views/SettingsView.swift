@@ -16,6 +16,9 @@ struct SettingsView: View {
     @ObservedObject private var notifier = Notifier.shared
     @State private var notifyRuns = Notifier.shared.notifyRuns
     @State private var pickFolder = false
+    @State private var cleanup: (delete: [TrackSession], notBackedUp: [String])?
+    @State private var confirmCleanup = false
+    @State private var cleanupNote: String?
 
     private let accuracyChoices: [Double] = [10, 20, 30, 40, 50, 65, 100, 200]
 
@@ -91,6 +94,10 @@ struct SettingsView: View {
                         if let r = backup.lastResult {
                             Text(r).font(.footnote).foregroundStyle(.secondary)
                         }
+                        Button("Delete backed-up recordings…", role: .destructive) { planCleanup() }
+                        if let cleanupNote {
+                            Text(cleanupNote).font(.footnote).foregroundStyle(.secondary)
+                        }
                         Button("Stop backing up", role: .destructive) { backup.forgetFolder() }
                     }
                 } header: {
@@ -124,7 +131,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Notifications and signing")
                 } footer: {
-                    Text("A notification comes when a run finishes, saying if anything went wrong (only if you've left the app, or for the automatic daily map). Two more come before this install stops opening: 24 hours before, and a last call 3 hours before; “Expiry warnings” shows when iOS has them set for. “Last re-signed” shows when a Sideloadly refresh (or reinstall) last renewed it. If it says Not set, open the app once more, or send a test. With Sideloadly's automatic refresh (see the Waytrace README), your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps your recordings; deleting it erases them.")
+                    Text("A notification comes when a run finishes, saying if anything went wrong (only if you've left the app). Two more notifications come before this install expires: one at 24 hours remaining, and a last call at 3 hours. “Last re-signed” shows when a Sideloadly refresh (or reinstall) last renewed it. If it says Not set, open the app once more, or send a test. With Sideloadly's automatic refresh (see the Waytrace README), your PC re-signs it over Wi-Fi before then. Reinstalling over the app keeps your recordings; deleting it erases them.")
                 }
 
                 Section {
@@ -154,7 +161,42 @@ struct SettingsView: View {
                 if case .success(let url) = result { backup.setFolder(url) }
             }
             .task { await notifier.refreshStatus() }
+            .confirmationDialog(cleanupTitle, isPresented: $confirmCleanup, titleVisibility: .visible) {
+                Button("Delete \(cleanup?.delete.count ?? 0) from this iPhone", role: .destructive) {
+                    if let list = cleanup?.delete { backup.deleteBackedUp(list) }
+                    cleanup = nil
+                    cleanupNote = nil
+                }
+                Button("Cancel", role: .cancel) { cleanup = nil }
+            } message: {
+                Text(cleanupMessage)
+            }
         }
+    }
+
+    /// Works out which recordings can go, then asks.
+    private func planCleanup() {
+        guard let plan = backup.cleanupPlan() else {
+            cleanupNote = "Can't reach the backup folder. Choose it again above."
+            return
+        }
+        let waiting = plan.notBackedUp.isEmpty ? "" : " \(plan.notBackedUp.count) older one(s) aren't fully in the backup yet; press Back up now, then try again."
+        if plan.delete.isEmpty {
+            cleanupNote = "Nothing to delete: no recording that ended 7 or more days ago is confirmed in the backup." + waiting
+            return
+        }
+        cleanupNote = waiting.isEmpty ? nil : String(waiting.dropFirst())
+        cleanup = plan
+        confirmCleanup = true
+    }
+
+    private var cleanupTitle: String {
+        let n = cleanup?.delete.count ?? 0
+        return n == 1 ? "Delete 1 backed-up recording?" : "Delete \(n) backed-up recordings?"
+    }
+
+    private var cleanupMessage: String {
+        "These ended 7 or more days ago, and their files (CSV and KML) are in \(backup.folderName ?? "the backup folder") › Recordings. They're deleted from this iPhone only; the backup copies stay. Each one's log (gaps, GPS rests, battery) isn't backed up and goes with it; the KML still shows the gaps."
     }
 
     private var permissionText: String {

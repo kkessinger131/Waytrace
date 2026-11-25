@@ -465,6 +465,32 @@ class PlanningTests(unittest.TestCase):
         self.assertLessEqual(len(long), rk.MAX_FILENAME_LEN)
         self.assertTrue(long.endswith("_osm_tiger.kml"))
 
+    def test_outputs_are_never_replaced(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            out = os.path.join(tmp, "road_osm.kml")
+            self.assertEqual(rk.unique_output_path(out), out)
+            open(out, "w").close()
+            self.assertEqual(os.path.basename(rk.unique_output_path(out)), "road_osm_2.kml")
+            open(os.path.join(tmp, "road_osm_2.kml"), "w").close()
+            self.assertEqual(os.path.basename(rk.unique_output_path(out)), "road_osm_3.kml")
+            # A name at the limit is shortened so the _N still fits.
+            full = "x" * (rk.MAX_FILENAME_LEN - 4) + ".kml"
+            open(os.path.join(tmp, full), "w").close()
+            second = os.path.basename(rk.unique_output_path(os.path.join(tmp, full)))
+            self.assertEqual(len(second), rk.MAX_FILENAME_LEN)
+            self.assertTrue(second.endswith("_2.kml"))
+            # Too long to begin with: shortened even when nothing is in the way.
+            longer = os.path.basename(rk.unique_output_path(os.path.join(tmp, "y" * 300 + ".kml")))
+            self.assertEqual(len(longer), rk.MAX_FILENAME_LEN)
+            # On Windows the whole path stays within MAX_PATH.
+            deep = os.path.join(tmp, "d" * 200)
+            win = rk.unique_output_path(os.path.join(deep, "z" * 100 + ".kml"), is_windows=True)
+            self.assertLessEqual(len(os.path.abspath(win)), rk.WINDOWS_MAX_PATH)
+            self.assertTrue(win.endswith(".kml"))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_offset_buffer(self):
         line = LineString([(0, 0), (100, 0)])                  # heading east; left = north
         band = rk._offset_buffer(line, 8, -5)                   # sidewalk 5..8 m left
@@ -519,6 +545,14 @@ class NamedRoadTests(TempDirTest):
         g = read_kml("b.kml")
         self.assertTrue(g.contains(at(1.5, 3, east_m=9)), "outline kept")
         self.assertTrue(g.contains(at(4, 3, east_m=5)), "centerline kept")
+        # The same run again doesn't replace b.kml: it saves b_2.kml beside it.
+        before = open("b.kml", encoding="utf-8").read()
+        code, out, again = run_main(["--road", "Conn Ave NW", "--state", "DC", "--source", "osm",
+                                     "--no-junctions", "--no-outlines", "--output", "b.kml"])
+        self.assertEqual((code, again), (0, "b_2.kml"), out)
+        self.assertIn("Note: b.kml is already in the folder; saving as b_2.kml instead.", out)
+        self.assertIn("Saved: b_2.kml", out)
+        self.assertEqual(open("b.kml", encoding="utf-8").read(), before)
 
     def test_outline_modes(self):
         """on: the outline replaces the centerline it covers; both: union of the two."""

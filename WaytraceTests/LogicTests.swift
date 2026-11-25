@@ -366,3 +366,133 @@ final class ExporterTests: XCTestCase {
         XCTAssertNil(TrackPoint(csvLine: TrackPoint.csvHeader))
     }
 }
+
+final class TurnDetectorTests: XCTestCase {
+    func testUsableCourse() {
+        XCTAssertEqual(TurnDetector.usableCourse(course: 90, courseAccuracy: 10, speed: 5), 90)
+        XCTAssertNil(TurnDetector.usableCourse(course: -1, courseAccuracy: 10, speed: 5), "no direction")
+        XCTAssertNil(TurnDetector.usableCourse(course: 90, courseAccuracy: -1, speed: 5), "direction invalid")
+        XCTAssertNil(TurnDetector.usableCourse(course: 90, courseAccuracy: 45, speed: 5), "too uncertain")
+        XCTAssertNil(TurnDetector.usableCourse(course: 90, courseAccuracy: 10, speed: 0.5), "too slow")
+    }
+
+    func testAngleWrapsAround() {
+        XCTAssertEqual(TurnDetector.angle(350, 20), 30)
+        XCTAssertEqual(TurnDetector.angle(20, 350), 30)
+        XCTAssertEqual(TurnDetector.angle(0, 180), 180)
+        XCTAssertEqual(TurnDetector.angle(90, 90), 0)
+    }
+
+    func testSixtyDegreesMakesATurn() {
+        var t = TurnDetector()
+        XCTAssertFalse(t.isTurn(course: 0), "the first usable direction becomes the reference")
+        XCTAssertEqual(t.reference, 0)
+        XCTAssertFalse(t.isTurn(course: 45), "a bend")
+        XCTAssertFalse(t.isTurn(course: 59.9))
+        XCTAssertFalse(t.isTurn(course: nil), "no usable direction: nothing to say")
+        XCTAssertTrue(t.isTurn(course: 60))
+        XCTAssertTrue(t.isTurn(course: 300), "60° the other way, across north")
+        t.saved(course: 90)
+        XCTAssertFalse(t.isTurn(course: 120), "measured from the new point")
+        XCTAssertTrue(t.isTurn(course: 170))
+        t.saved(course: nil)
+        XCTAssertFalse(t.isTurn(course: 270), "saved while too slow: the next direction is the reference")
+        XCTAssertEqual(t.reference, 270)
+        t.reset()
+        XCTAssertNil(t.reference)
+    }
+}
+
+final class CleanupTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private func rec(_ name: String, daysAgo: Double, kml: Bool = true) -> Cleanup.Local {
+        var files = ["\(name).csv": 1000]
+        if kml { files["\(name).kml"] = 5000 }
+        return Cleanup.Local(name: name, ended: now.addingTimeInterval(-daysAgo * 86400), files: files)
+    }
+
+    func testOnlyOldBackedUpRecordingsGo() {
+        let backup: [String: Cleanup.Backed] = [
+            "a.csv": .init(size: 1000, uploaded: true), "a.kml": .init(size: 5000, uploaded: true),
+            "b.csv": .init(size: 1000), "b.kml": .init(size: 4000),                       // KML changed since
+            "c.csv": .init(size: nil, inCloudOnly: true), "c.kml": .init(size: nil, inCloudOnly: true),
+            "d.csv": .init(size: 1000, uploaded: false), "d.kml": .init(size: 5000),       // not uploaded yet
+            "e.csv": .init(size: 1000),
+        ]
+        XCTAssertEqual(Cleanup.check(rec("a", daysAgo: 8), backup: backup, active: nil, now: now), .delete)
+        XCTAssertEqual(Cleanup.check(rec("a", daysAgo: 6.9), backup: backup, active: nil, now: now), .tooNew)
+        XCTAssertEqual(Cleanup.check(rec("a", daysAgo: 8), backup: backup, active: "a", now: now), .recording)
+        XCTAssertEqual(Cleanup.check(rec("b", daysAgo: 8), backup: backup, active: nil, now: now), .notBackedUp("b.kml"))
+        XCTAssertEqual(Cleanup.check(rec("c", daysAgo: 8), backup: backup, active: nil, now: now), .delete, "kept in iCloud only")
+        XCTAssertEqual(Cleanup.check(rec("d", daysAgo: 8), backup: backup, active: nil, now: now), .notBackedUp("d.csv"))
+        XCTAssertEqual(Cleanup.check(rec("e", daysAgo: 8), backup: backup, active: nil, now: now), .notBackedUp("e.kml"))
+        XCTAssertEqual(Cleanup.check(rec("e", daysAgo: 8, kml: false), backup: backup, active: nil, now: now), .delete,
+                       "no KML on the phone: the CSV is enough")
+        XCTAssertEqual(Cleanup.check(rec("z", daysAgo: 30), backup: backup, active: nil, now: now), .notBackedUp("z.csv"))
+    }
+
+    func testReadingTheBackupListing() {
+        let p = Cleanup.backed(name: ".2026-11-08_09-12-44.csv.icloud", size: 120, notDownloaded: false, uploaded: nil)
+        XCTAssertEqual(p.key, "2026-11-08_09-12-44.csv")
+        XCTAssertTrue(p.value.inCloudOnly)
+        let f = Cleanup.backed(name: "2026-11-08_09-12-44.KML", size: 99, notDownloaded: false, uploaded: true)
+        XCTAssertEqual(f.key, "2026-11-08_09-12-44.kml")
+        XCTAssertEqual(f.value, Cleanup.Backed(size: 99, inCloudOnly: false, uploaded: true))
+        XCTAssertTrue(Cleanup.backed(name: "x.csv", size: 10, notDownloaded: true, uploaded: nil).value.inCloudOnly)
+    }
+}
+
+final class PhotoPathTests: XCTestCase {
+    private var cal: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "America/Chicago")!
+        return c
+    }
+    private func date(_ s: String) -> Date {
+        let f = DateFormatter()
+        f.calendar = cal; f.timeZone = cal.timeZone; f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f.date(from: s)!
+    }
+
+    func testSpans() {
+        let day = date("2026-11-20 15:00")
+        let d = PhotoPath.interval(.day, day: day, from: day, to: day, calendar: cal)!
+        XCTAssertEqual(d.start, date("2026-11-20 00:00"))
+        XCTAssertEqual(d.end, date("2026-11-21 00:00"))
+        let r = PhotoPath.interval(.range, day: day, from: date("2026-11-22 09:00"), to: date("2026-11-18 23:00"), calendar: cal)!
+        XCTAssertEqual(r.start, date("2026-11-18 00:00"), "ends either way round")
+        XCTAssertEqual(r.end, date("2026-11-23 00:00"))
+        XCTAssertNil(PhotoPath.interval(.all, day: day, from: day, to: day, calendar: cal))
+        XCTAssertEqual(PhotoPath.fileName(.day, day: day, from: day, to: day, calendar: cal), "photos_2026-11-20.kml")
+        XCTAssertEqual(PhotoPath.fileName(.range, day: day, from: date("2026-11-22 09:00"), to: date("2026-11-18 09:00"), calendar: cal),
+                       "photos_2026-11-18_to_2026-11-22.kml")
+        XCTAssertEqual(PhotoPath.fileName(.range, day: day, from: day, to: day, calendar: cal), "photos_2026-11-20.kml")
+        XCTAssertEqual(PhotoPath.fileName(.all, day: day, from: day, to: day, calendar: cal), "photos_all.kml")
+    }
+
+    func testKMLLikeExif2kml() throws {
+        let pts = [
+            PhotoPath.Point(name: "IMG_0002", time: date("2026-11-20 10:05"), latitude: 38.91, longitude: -77.04, altitude: 30),
+            PhotoPath.Point(name: "IMG_0001", time: date("2026-11-20 10:00"), latitude: 38.90, longitude: -77.03, altitude: nil),
+            PhotoPath.Point(name: "A&B", time: date("2026-11-20 10:10"), latitude: 38.92, longitude: -77.05, altitude: nil),
+        ]
+        XCTAssertEqual(PhotoPath.title(pts), "Photo Path - IMG_0001 to A&B")
+        let kml = PhotoPath.kml(pts, title: PhotoPath.title(pts), pins: true, calendar: cal)
+        XCTAssertNoThrow(try XMLParserCheck.parse(kml))
+        XCTAssertTrue(kml.contains("<name>Photo Path - IMG_0001 to A&amp;B</name>"))
+        XCTAssertTrue(kml.contains("<name>IMG_0001</name><description>Taken 2026-11-20 10:00:00</description>"))
+        XCTAssertTrue(kml.contains("wht-circle-lv.png"))
+        // The line goes in the order the photos were taken, with altitude where known.
+        XCTAssertTrue(kml.contains("-77.030000,38.900000\n-77.040000,38.910000,30.0\n-77.050000,38.920000\n</coordinates>"))
+        let first = try XCTUnwrap(kml.range(of: "<name>IMG_0001</name>")).lowerBound
+        let second = try XCTUnwrap(kml.range(of: "<name>IMG_0002</name>")).lowerBound
+        XCTAssertTrue(first < second)
+
+        let noPins = PhotoPath.kml(pts, title: "x", pins: false, calendar: cal)
+        XCTAssertFalse(noPins.contains("<Point>"))
+        XCTAssertTrue(noPins.contains("<name>Route Path</name>"))
+        let one = PhotoPath.kml([pts[0]], title: "x", pins: true, calendar: cal)
+        XCTAssertFalse(one.contains("LineString"), "one photo: a marker, no line")
+    }
+}

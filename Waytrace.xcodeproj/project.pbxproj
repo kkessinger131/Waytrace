@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7A1E00000000000000000082 /* WaytraceControls.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A1E00000000000000000070 /* WaytraceControls.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A1E00000000000000000042 /* RoadKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1E00000000000000000041 /* RoadKit */; };
 /* End PBXBuildFile section */
 
@@ -18,11 +19,33 @@
 			remoteGlobalIDString = 7A1E00000000000000000010;
 			remoteInfo = Waytrace;
 		};
+		7A1E00000000000000000085 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7A1E00000000000000000030 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A1E00000000000000000075;
+			remoteInfo = WaytraceControls;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7A1E00000000000000000083 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7A1E00000000000000000082 /* WaytraceControls.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		7A1E00000000000000000001 /* Waytrace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Waytrace.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A1E00000000000000000050 /* WaytraceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WaytraceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A1E00000000000000000070 /* WaytraceControls.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WaytraceControls.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -41,14 +64,31 @@
 				TrackPoint.swift,
 				Logic/AppVersion.swift,
 				Logic/BackgroundPacer.swift,
+				Logic/Cleanup.swift,
 				Logic/DailyPlan.swift,
+				Logic/PhotoPath.swift,
 				Logic/PhotoPlacer.swift,
 				Logic/RecordingLog.swift,
 				Logic/RunSummary.swift,
 				Logic/SigningInfo.swift,
 				Logic/StillnessDetector.swift,
+				Logic/TurnDetector.swift,
 			);
 			target = 7A1E00000000000000000051 /* WaytraceTests */;
+		};
+		7A1E00000000000000000072 /* Exceptions for "WaytraceControls" folder in "WaytraceControls" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7A1E00000000000000000075 /* WaytraceControls */;
+		};
+		7A1E00000000000000000073 /* Exceptions for "Waytrace" folder in "WaytraceControls" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Intents/RecordingIntents.swift,
+			);
+			target = 7A1E00000000000000000075 /* WaytraceControls */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -58,6 +98,7 @@
 			exceptions = (
 				7A1E00000000000000000002 /* Exceptions for "Waytrace" folder in "Waytrace" target */,
 				7A1E00000000000000000054 /* Exceptions for "Waytrace" folder in "WaytraceTests" target */,
+				7A1E00000000000000000073 /* Exceptions for "Waytrace" folder in "WaytraceControls" target */,
 			);
 			path = Waytrace;
 			sourceTree = "<group>";
@@ -65,6 +106,14 @@
 		7A1E00000000000000000053 /* WaytraceTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = WaytraceTests;
+			sourceTree = "<group>";
+		};
+		7A1E00000000000000000071 /* WaytraceControls */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7A1E00000000000000000072 /* Exceptions for "WaytraceControls" folder in "WaytraceControls" target */,
+			);
+			path = WaytraceControls;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -85,6 +134,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A1E00000000000000000078 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -93,6 +149,7 @@
 			children = (
 				7A1E00000000000000000003 /* Waytrace */,
 				7A1E00000000000000000053 /* WaytraceTests */,
+				7A1E00000000000000000071 /* WaytraceControls */,
 				7A1E00000000000000000006 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -102,6 +159,7 @@
 			children = (
 				7A1E00000000000000000001 /* Waytrace.app */,
 				7A1E00000000000000000050 /* WaytraceTests.xctest */,
+				7A1E00000000000000000070 /* WaytraceControls.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -116,10 +174,12 @@
 				7A1E00000000000000000011 /* Sources */,
 				7A1E00000000000000000004 /* Frameworks */,
 				7A1E00000000000000000012 /* Resources */,
+				7A1E00000000000000000083 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				7A1E00000000000000000084 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7A1E00000000000000000003 /* Waytrace */,
@@ -155,6 +215,28 @@
 			productReference = 7A1E00000000000000000050 /* WaytraceTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		7A1E00000000000000000075 /* WaytraceControls */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A1E00000000000000000076 /* Build configuration list for PBXNativeTarget "WaytraceControls" */;
+			buildPhases = (
+				7A1E00000000000000000077 /* Sources */,
+				7A1E00000000000000000078 /* Frameworks */,
+				7A1E00000000000000000079 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7A1E00000000000000000071 /* WaytraceControls */,
+			);
+			name = WaytraceControls;
+			packageProductDependencies = (
+			);
+			productName = WaytraceControls;
+			productReference = 7A1E00000000000000000070 /* WaytraceControls.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -171,6 +253,9 @@
 					7A1E00000000000000000051 = {
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = 7A1E00000000000000000010;
+					};
+					7A1E00000000000000000075 = {
+						CreatedOnToolsVersion = 26.0;
 					};
 				};
 			};
@@ -193,6 +278,7 @@
 			targets = (
 				7A1E00000000000000000010 /* Waytrace */,
 				7A1E00000000000000000051 /* WaytraceTests */,
+				7A1E00000000000000000075 /* WaytraceControls */,
 			);
 		};
 /* End PBXProject section */
@@ -206,6 +292,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7A1E00000000000000000057 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A1E00000000000000000079 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -229,6 +322,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A1E00000000000000000077 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -236,6 +336,11 @@
 			isa = PBXTargetDependency;
 			target = 7A1E00000000000000000010 /* Waytrace */;
 			targetProxy = 7A1E00000000000000000062 /* PBXContainerItemProxy */;
+		};
+		7A1E00000000000000000084 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A1E00000000000000000075 /* WaytraceControls */;
+			targetProxy = 7A1E00000000000000000085 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -385,6 +490,62 @@
 			};
 			name = Release;
 		};
+		7A1E00000000000000000080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WaytraceControls/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Waytrace;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.waytrace.controls;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7A1E00000000000000000081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WaytraceControls/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Waytrace;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.waytrace.controls;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -411,6 +572,15 @@
 			buildConfigurations = (
 				7A1E00000000000000000059 /* Debug */,
 				7A1E00000000000000000060 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A1E00000000000000000076 /* Build configuration list for PBXNativeTarget "WaytraceControls" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A1E00000000000000000080 /* Debug */,
+				7A1E00000000000000000081 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

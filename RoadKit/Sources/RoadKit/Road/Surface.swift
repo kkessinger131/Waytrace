@@ -184,9 +184,12 @@ extension RoadToKML {
         }
     }
 
-    /// _finish_output: buffer, write the KML, summarize.
+    /// _finish_output: buffer, write the KML, summarize. Never replaces an existing file
+    /// (see Planning.uniqueOutput); returns the name actually written.
     func finishOutput(_ layers: [Layer], _ opts: Options, road: String, place: String, source: String,
-                      output: String) throws -> String {
+                      output requested: String) throws -> String {
+        let (output, note) = Planning.uniqueOutput(requested) { FileManager.default.fileExists(atPath: outputURL($0).path) }
+        if let note { log(note) }
         let (surface, pins) = try buildCombinedPolygon(layers, extraLanes: opts.lanes, leftWidth: opts.leftWidth,
                                                        rightWidth: opts.rightWidth)
         try writeKML(surface, road: road, place: place, output: output, source: source, notes: opts.notes, pins: pins)

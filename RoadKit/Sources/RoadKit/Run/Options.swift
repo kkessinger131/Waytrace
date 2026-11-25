@@ -60,7 +60,7 @@ public enum OptionParser {
         Spec(flag: "--track", kind: .plus, metavar: "FILE", help: "Map GPS history instead of a named road: Google Maps Timeline exports (Timeline.json / location-history.json, Takeout Records.json or Semantic Location History files), GPX, KML or GeoJSON tracks."),
         Spec(flag: "--date", kind: .value, metavar: "DATE", help: "With --track: day(s) to map — 2026-10-30, 2026-10, 2026-10-01..2026-10-31, or all."),
         Spec(flag: "--travel-modes", kind: .value, metavar: "TRAVEL_MODES", help: "With --track: which trips to map (drive, walk, bike, other = mode unknown). Flights, trains and ferries are always skipped. Default: all four."),
-        Spec(flag: "--output", kind: .value, metavar: "OUTPUT", help: "Output .kml filename (default: auto-generated, ending in _osm, _tiger or _osm_tiger)"),
+        Spec(flag: "--output", kind: .value, metavar: "OUTPUT", help: "Output .kml filename (default: auto-generated, ending in _osm, _tiger or _osm_tiger). An existing file is never replaced: _2, _3, ... is added instead"),
         Spec(flag: "--notes", kind: .value, metavar: "NOTES", help: "Text added to the KML description"),
         Spec(flag: "--lanes", kind: .int, metavar: "LANES", help: "Override/add extra lanes to default width estimate"),
         Spec(flag: "--leftwidth", kind: .float, metavar: "LEFTWIDTH", help: "Distance (m) from centerline to left edge; negative puts that edge on the other side of the centerline (overrides default half-width)"),

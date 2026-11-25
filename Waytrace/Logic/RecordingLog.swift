@@ -1,7 +1,8 @@
 import Foundation
 
 /// What happened during a recording besides the points: the times Waytrace wasn't running
-/// (gaps) and the times the GPS rested. Saved next to the recording as <name>.log.json.
+/// (gaps), the times the GPS rested, and the battery. Saved next to the recording as
+/// <name>.log.json.
 struct RecordingLog: Codable, Equatable, Sendable {
     struct Spot: Codable, Equatable, Sendable {
         var latitude: Double
@@ -35,8 +36,34 @@ struct RecordingLog: Codable, Equatable, Sendable {
         var wokeBy: String?
     }
 
+    /// The battery level, noted when recording starts and stops, when the GPS rests or wakes,
+    /// and whenever the level, charging or Low Power Mode changes.
+    struct BatterySample: Codable, Equatable, Sendable {
+        var time: Date
+        /// 0...1
+        var level: Double
+        var charging: Bool
+        var lowPower: Bool
+    }
+
     var gaps: [Gap] = []
     var rests: [Rest] = []
+    var battery: [BatterySample] = []
+
+    init(gaps: [Gap] = [], rests: [Rest] = [], battery: [BatterySample] = []) {
+        self.gaps = gaps
+        self.rests = rests
+        self.battery = battery
+    }
+
+    // Logs saved before the battery was added have no "battery" key.
+    private enum CodingKeys: String, CodingKey { case gaps, rests, battery }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        gaps = try c.decodeIfPresent([Gap].self, forKey: .gaps) ?? []
+        rests = try c.decodeIfPresent([Rest].self, forKey: .rests) ?? []
+        battery = try c.decodeIfPresent([BatterySample].self, forKey: .battery) ?? []
+    }
 
     /// Gaps shorter than this aren't worth a line (a quick relaunch).
     static let minGap: TimeInterval = 60
@@ -78,6 +105,26 @@ struct RecordingLog: Codable, Equatable, Sendable {
         if reason.hasPrefix("a rough position") { return "cell-tower position" }
         return reason
     }
+
+    // MARK: - Battery
+
+    /// Adds a sample if anything changed since the last one (or `force`, at start, stop and
+    /// rest changes). Returns whether it was added. A negative level (unknown) is ignored.
+    @discardableResult
+    mutating func noteBattery(_ s: BatterySample, force: Bool = false) -> Bool {
+        guard s.level >= 0 else { return false }
+        if !force, let last = battery.last,
+           last.level == s.level, last.charging == s.charging, last.lowPower == s.lowPower { return false }
+        battery.append(s)
+        return true
+    }
+
+    /// Whether the GPS was resting at `t`.
+    func isResting(at t: Date) -> Bool {
+        rests.contains { $0.from <= t && t < ($0.to ?? .distantFuture) }
+    }
+
+    var batteryReport: BatteryReport? { BatteryReport(samples: battery, resting: isResting(at:)) }
 
     // MARK: - File
 
@@ -144,5 +191,54 @@ enum Interruption {
         if m < 60 { return "\(max(1, m))-minute" }
         let h = m / 60, r = m % 60
         return r == 0 ? "\(h)-hour" : "\(h) h \(r) min"
+    }
+}
+
+/// What the battery did during a recording. Only stretches on battery count towards use:
+/// time on the charger is left out. The level includes everything else the phone did
+/// meanwhile, and iOS reports it in steps, so short stretches are rough.
+struct BatteryReport: Equatable, Sendable {
+    /// Level lost while on battery, 0...1.
+    var used: Double
+    /// Time on battery between the first and last sample.
+    var onBattery: TimeInterval
+    var charging: TimeInterval
+    /// Use per hour on battery, with the GPS running and with it resting (nil without at
+    /// least half an hour of each).
+    var perHour: Double?
+    var perHourActive: Double?
+    var perHourResting: Double?
+    var lowPower: Bool
+    var first: Double
+    var last: Double
+
+    static let minHours = 0.5
+
+    init?(samples: [RecordingLog.BatterySample], resting: (Date) -> Bool) {
+        let s = samples.sorted { $0.time < $1.time }
+        guard s.count >= 2, let a = s.first, let b = s.last, b.time > a.time else { return nil }
+        var used = 0.0, onBattery = 0.0, charging = 0.0
+        var active = (used: 0.0, time: 0.0), rest = (used: 0.0, time: 0.0)
+        for (p, q) in zip(s, s.dropFirst()) {
+            let dt = q.time.timeIntervalSince(p.time)
+            if p.charging || q.charging {
+                charging += dt
+                continue
+            }
+            let drop = max(0, p.level - q.level)
+            used += drop
+            onBattery += dt
+            if resting(p.time) { rest.used += drop; rest.time += dt } else { active.used += drop; active.time += dt }
+        }
+        let rate = { (u: Double, t: TimeInterval) -> Double? in t / 3600 >= Self.minHours ? u / (t / 3600) : nil }
+        self.used = used
+        self.onBattery = onBattery
+        self.charging = charging
+        perHour = rate(used, onBattery)
+        perHourActive = rate(active.used, active.time)
+        perHourResting = rate(rest.used, rest.time)
+        lowPower = s.contains { $0.lowPower }
+        first = a.level
+        last = b.level
     }
 }

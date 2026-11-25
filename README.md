@@ -7,7 +7,9 @@ replaces two workflows:
 - **Photo EXIF → KML.** Every point has what a photo's GPS EXIF has (time,
   position, accuracy, altitude, speed, direction of travel), with no photos to
   take. Export → **KML** gives the same line-plus-point-markers file, with
-  the photos you took during the recording as points on the line.
+  the photos you took during the recording as points on the line. The
+  **Photos** tab does what exif2kml.py did: every photo on a map, and a KML
+  line through them for any day or range of days.
 - **Google Timeline → `road_to_kml.py`.** road_to_kml.py is built into the app
   (the **Roads** tab, and **Map roads traveled** on any recording), so the road
   surfaces come out as KML on the phone. Export → **Records.json** still works
@@ -32,6 +34,9 @@ builds the app on a cloud Mac, and Sideloadly installs it from a Windows PC.
      Settings › Accounts.
    - **Bundle Identifier:** change `com.example.waytrace` to something unique,
      e.g. `com.yourname.waytrace`.
+   - Do the same for the **WaytraceControls** target (the Control Center
+     buttons): same Team, and the app's ID plus `.controls`
+     (`com.yourname.waytrace.controls`).
 3. Plug in the iPhone and pick it as the run destination. If asked, turn on
    **Developer Mode** on the phone (Settings › Privacy & Security › Developer
    Mode) and restart it.
@@ -48,7 +53,10 @@ Alternatively, create a new iOS App project (SwiftUI) named Waytrace and
 delete its template Swift files. Then drag in the `Waytrace` folder and set
 the build settings **Info.plist File** = `Waytrace/Info.plist`, **Generate
 Info.plist File** = No, **iOS Deployment Target** = 17.0, **Swift Language
-Version** = 5, and **Default Actor Isolation** = nonisolated.
+Version** = 5, and **Default Actor Isolation** = nonisolated. That
+leaves out the Control Center buttons; for them, add a Widget Extension
+target named WaytraceControls (iOS 18) holding `WaytraceControls/` and
+`Waytrace/Intents/RecordingIntents.swift`.
 
 ---
 
@@ -105,6 +113,15 @@ once, and any other value you chose is kept.)
   "Always" access), or at a quick GPS check every 3 minutes; the status card
   shows when it rested and what woke it. Nothing is saved while resting, since
   you haven't gone anywhere.
+- **Turns.** Between attempts, a turn of **60° or more** in your direction of
+  travel since the last saved point saves a point straight away, so corners
+  stay sharp instead of being cut (at 10 s and 30 mph a corner could be cut by
+  up to about 130 m). It reads the GPS's own direction of travel, and only
+  when it's reliable: moving faster than 1 m/s with the direction known to
+  ±30°. It costs no battery, since fixes already arrive about once a second
+  while you move and this only looks at each one's direction. The distance,
+  accuracy and drift rules still apply to a turn point. The Record screen
+  counts them ("at turns").
 - **No road snapping.** The activity type is `.other`, so a walk across a
   plaza or field is recorded as walked.
 - **Drift guard.** Indoors, wifi positions (±30–65 m) wander 20–50 m while
@@ -241,7 +258,17 @@ finished recording that doesn't have one yet, such as those recorded before
 this was added. Deleting a recording on the phone deletes its KML there too,
 but not the backup copies.
 
-## Gaps and the battery saver log
+**Delete backed-up recordings…** (Settings › Backup) frees space on the phone.
+It deletes only recordings that ended **7 or more days ago** and whose CSV and
+KML are confirmed in `Recordings/`: present, the same size, and uploaded by
+iCloud (files iCloud keeps only in the cloud count as uploaded). It lists how
+many it will delete and asks first; a recording in progress is never touched.
+Older recordings that aren't fully in the backup yet are counted, so you can
+press **Back up now** and try again. A recording's log (gaps, GPS rests,
+battery) isn't backed up and is deleted with it; the backed-up KML still shows
+the gaps.
+
+## Gaps, battery and the battery saver log
 
 If Waytrace stops while recording (the phone was off, iOS closed it, a Sideloadly
 refresh restarted it…), the recording picks up again when it can. The gap is
@@ -254,6 +281,45 @@ resumes.
 The same log keeps each GPS rest and what woke it. The recording's page sums
 them up and flags any wake where only the 3-minute GPS check noticed you'd
 left (the one case where a little track before it could be missing).
+
+It also keeps the **battery level**: when recording starts and stops, at each
+GPS rest and wake, at midnight, and whenever the level changes (iOS reports it
+in 1% steps). The recording's page charts it, with the GPS rests shaded, and
+lists the percentage used, the rate per hour, the rate with the GPS on and
+with it resting, time on the charger (left out of the rates) and whether Low
+Power Mode was on. The level counts everything else the phone did too, so
+short stretches are rough; over a day it shows what recording costs and what
+resting saves. Recordings made before this have no battery section.
+
+## Photos
+
+The **Photos** tab is exif2kml.py on the phone. It shows every photo and video
+in your library that has a location (screenshots left out) on a map, grouped
+into numbered clusters where they're dense; tap a cluster to zoom in, or a
+photo for its file name, time and a small picture.
+
+Choose **Day**, **Range** (first and last day) or **All**, and the map shows
+just those. **Make KML line** writes a red line through them in the order
+they were taken, with a pin for each one named by its file (`IMG_1234`) and
+holding its time and altitude; turn off **Photo markers in the KML** for the
+line alone. The file goes to `Exports/` as `photos_2026-11-08.kml`,
+`photos_2026-11-01_to_2026-11-08.kml` or `photos_all.kml`, and **Share** sends
+it anywhere. Photos without a location are counted but can't be shown or
+drawn. With limited photo access (iOS's "Selected Photos"), only the photos
+you've shared with Waytrace are there.
+
+## Control Center and Shortcuts
+
+On iOS 18 and later, Waytrace adds two Control Center buttons, **Start
+recording** and **Stop recording**: open Control Center, tap **+** (top left)
+› **Add a Control**, search for Waytrace, and place them. The same two actions
+are in the Shortcuts app and Siri ("Start recording in Waytrace"), and can go
+on the Action button, Back Tap or an automation.
+
+Either one opens Waytrace on the Record screen, because iOS only lets an app
+that's on screen start the GPS. Start begins recording just like RECORD
+(nothing changes if it's already recording). Stop asks first, the same as
+STOP; if nothing is recording, it says so.
 
 ## Signing reminder
 
@@ -291,6 +357,10 @@ matching and batches. It needs a network connection for the map data.
   command, so a run can be repeated on the computer. Batches save and open as
   the same CSV files the script reads.
 - **Settings** has the Overpass server override and the mirror tally.
+- **Nothing is overwritten.** If the output file already exists in the
+  folder, `_2`, `_3`… is added and the log says so, as in road_to_kml.py.
+  Names are kept to 120 characters (Windows allows 255, and paths 260 with
+  the folder), so the files copy to a PC as they are.
 
 Files live in the Files app under **On My iPhone › Waytrace › Road KML**
 (imported inputs in its **Inputs** folder).
@@ -311,8 +381,9 @@ Every GitHub build runs:
   (recomputed with the current script by `make_alias_fixture.py`) must come
   out the same in Swift.
 - **The app's tests on an iPhone simulator** (`WaytraceTests`): resting the
-  GPS, photo placement, the daily map queue, signing expiry, run notifications,
-  background pacing and exports. They run inside the app, so the build also
+  GPS, turn points, photo placement, the daily map queue, signing expiry, run
+  notifications, background pacing, the battery log, which recordings may be
+  deleted, the photo-line KML and exports. They run inside the app, so the build also
   checks that it launches.
 
 The `road_to_kml/` folder holds copies of the Python scripts for these checks.
@@ -325,21 +396,23 @@ stay in step.
 
 | File | Role |
 |---|---|
-| `LocationRecorder.swift` | Core Location setup, the 10 s / 10 m sampling, relaunch and resume |
+| `LocationRecorder.swift` | Core Location setup, the 10 s / 10 m sampling and turn points, the battery log, relaunch and resume |
 | `SamplingPolicy.swift` | The sampling settings and their defaults |
 | `TrackStore.swift` | One CSV per recording in Documents/Tracks, appended per point |
 | `RecordingKML.swift` | Each finished recording's line KML (with photos), saved beside its CSV for the backup |
 | `TrackPoint.swift` | The point model, CSV format, time formats, distance maths |
 | `MotionAnnotator.swift` | Walking/driving labels from Core Motion history |
 | `Exporter.swift` | KML, Records.json, GPX, CSV and photo-map writers |
-| `Logic/` | Rules without any iOS dependency, tested on their own: `StillnessDetector` (when the GPS rests and wakes), `PhotoPlacer`, `DailyPlan`, `SigningInfo`, `RunSummary`, `BackgroundPacer` |
+| `Logic/` | Rules without any iOS dependency, tested on their own: `StillnessDetector` (when the GPS rests and wakes), `TurnDetector`, `RecordingLog` (gaps, rests, battery), `PhotoPlacer`, `PhotoPath` (the Photos tab's KML), `Cleanup` (which recordings may be deleted), `DailyPlan`, `SigningInfo`, `RunSummary`, `BackgroundPacer` |
 | `MotionWatch.swift` | Live activity and step count while recording, for resting the GPS |
 | `DailyRoads.swift` | The automatic daily road map |
-| `Backup.swift` | Copies to the iCloud Drive folder |
+| `Backup.swift` | Copies to the iCloud Drive folder, and deletes backed-up recordings from the phone |
 | `Notifier.swift` | Run-finished and signing-expiry notifications |
 | `RunKeepAlive.swift` | Keeps a Road to KML run alive in the background |
-| `PhotoLibrary.swift` | Reads photo times and places for the KML and the daily road map |
-| `Views/` | SwiftUI screens: main screen with RECORD/STOP, recording detail, export sheet, settings |
+| `PhotoLibrary.swift` | Reads photo times and places for the KML, the daily road map and the Photos tab |
+| `Intents/` | Start and Stop Recording for Control Center, Shortcuts and Siri |
+| `WaytraceControls/` | The widget extension holding the two Control Center buttons (iOS 18) |
+| `Views/` | SwiftUI screens: main screen with RECORD/STOP, recording detail (with the battery chart), export sheet, Photos tab, settings |
 | `Roads/` | The Roads tab: forms and batch (`RoadForms`), runs and output files (`RoadJobs`), screens (`RoadsView`, `RunView`) |
 | `RoadKit/` | Swift package: the port of road_to_kml.py, road_aliases.py, road_tracks.py, mirror_stats.py and county_fips.py, on GEOS (the library Shapely uses) |
 | `RoadKit/Tests/` | The port of test_road_to_kml.py, with the same synthetic DC street grid and offline fakes; the cross-check and alias parity tests |

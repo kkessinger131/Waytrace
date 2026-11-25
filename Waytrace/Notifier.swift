@@ -165,7 +165,7 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 content.title = "Waytrace needs re-signing"
                 content.body = "This install stops opening \(when). "
                     + "Refresh it with Sideloadly before then (automatic refresh does it when the phone's screen is on, on the same Wi-Fi as your PC). "
-                    + "Your recordings are kept when you reinstall over it; deleting the app would erase them."
+                    + "Your recordings are kept when you refresh or update; deleting the app would erase them."
             case .lastCall:
                 content.title = "Last call: Waytrace stops opening at \(expiry.formatted(date: .omitted, time: .shortened))"
                 content.body = "It hasn't been refreshed yet. Plug the phone into your PC, or open Sideloadly and install Waytrace.ipa again over the app."

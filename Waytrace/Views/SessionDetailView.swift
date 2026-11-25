@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import Charts
 
 struct SessionDetailView: View {
     let session: TrackSession
@@ -113,6 +114,10 @@ struct SessionDetailView: View {
                 }
             }
 
+            if let report = log.batteryReport {
+                batterySection(report)
+            }
+
             Section {
                 Button {
                     showExport = true
@@ -153,6 +158,50 @@ struct SessionDetailView: View {
             points = TrackStore.shared.loadPoints(from: session.url)
             log = RecordingLog.load(for: session.url)
             loaded = true
+        }
+    }
+
+    /// Battery use while recording, and a chart of the level with the GPS rests shaded.
+    @ViewBuilder
+    private func batterySection(_ r: BatteryReport) -> some View {
+        let pct = { (x: Double) in "\(Int((x * 100).rounded()))%" }
+        let rate = { (x: Double) in String(format: "about %.1f%%/h", x * 100) }
+        let end = log.battery.last?.time ?? Date()
+        Section {
+            Chart {
+                ForEach(Array(log.rests.enumerated()), id: \.offset) { _, rest in
+                    RectangleMark(xStart: .value("Rest from", rest.from), xEnd: .value("Rest to", rest.to ?? end))
+                        .foregroundStyle(.green.opacity(0.18))
+                }
+                ForEach(Array(log.battery.enumerated()), id: \.offset) { _, b in
+                    LineMark(x: .value("Time", b.time), y: .value("Battery", b.level * 100))
+                        .interpolationMethod(.stepEnd)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .chartYScale(domain: 0...100)
+            .chartYAxis {
+                AxisMarks(values: [0, 50, 100]) { v in
+                    AxisGridLine()
+                    AxisValueLabel { Text("\(v.as(Int.self) ?? 0)%") }
+                }
+            }
+            .frame(height: 140)
+            LabeledContent("Used", value: "\(pct(r.used)) over \(Fmt.duration(r.onBattery))")
+            LabeledContent("Level", value: "\(pct(r.first)) at the start, \(pct(r.last)) at the end")
+            if let x = r.perHour { LabeledContent("Rate", value: rate(x)) }
+            if let a = r.perHourActive, let b = r.perHourResting {
+                LabeledContent("With the GPS on", value: rate(a))
+                LabeledContent("With the GPS resting", value: rate(b))
+            }
+            if r.charging >= 60 { LabeledContent("On the charger", value: Fmt.duration(r.charging)) }
+            if r.lowPower {
+                Text("Low Power Mode was on for at least part of the recording.").font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Battery")
+        } footer: {
+            Text("From the phone's battery level, which counts everything else the phone did too and moves in steps, so short stretches are rough. Time on the charger is left out. Shaded: the GPS was resting.")
         }
     }
 

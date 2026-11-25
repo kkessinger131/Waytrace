@@ -36,6 +36,10 @@ account and your Apple ID.
    iPhone simulator, then the app is built. (The map geometry library, GEOS,
    is kept between builds, so later ones are quicker.) To start one by hand,
    click **Build Waytrace (.ipa)** › **Run workflow**.
+   - Builds run on GitHub's Apple-silicon Macs. When none is free and the run
+     is cancelled before it starts, the **Intel fallback** workflow starts the
+     same build on an Intel Mac by itself, a minute or so later; look for a
+     new run of Build Waytrace. Its .ipa is the same.
 2. When the run shows a green tick, open it. Under **Artifacts**, download
    **Waytrace-ipa**. It downloads as a .zip; extract it to get
    **Waytrace.ipa**. Each build is numbered with its run (the number after
@@ -53,6 +57,12 @@ red error lines from the failed step, and send them to Claude.
 3. Connect the iPhone by USB. Unlock it and tap **Trust** if asked.
 4. Open Sideloadly and drag **Waytrace.ipa** into it. Enter your Apple ID and
    click **Start**. Enter your password and the two-factor code when asked.
+   - Waytrace carries a small extension for its Control Center buttons, which
+     Sideloadly signs along with the app. Leave **Remove app extensions** (in
+     Advanced Options) unticked, or the buttons won't be there.
+   - The extension uses a second App ID. A free Apple ID can register 10 App
+     IDs a week, and re-signing the same app reuses its IDs, so this only
+     matters if you sideload many different apps.
 5. On the iPhone:
    - **Trust the profile:** go to Settings › General › **VPN & Device
      Management**, tap your Apple ID, then **Trust**.

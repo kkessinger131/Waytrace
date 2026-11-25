@@ -8,8 +8,10 @@ import UIKit
 /// How the sampling works
 /// - Core Location runs with best accuracy and a small distance filter (5 m), so while you
 ///   stand still iOS stops waking the app; while you move it delivers roughly one fix a second.
-/// - Every `interval` seconds (15 by default) the recorder makes one save attempt, using the
+/// - Every `interval` seconds (10 by default) the recorder makes one save attempt, using the
 ///   newest fix, or a slightly older one from the last 3 s if it is more accurate.
+/// - In between, a fix whose direction of travel has turned 60° or more since the last saved
+///   point is saved straight away (TurnDetector), so corners stay sharp.
 /// - The attempt is dropped if the fix is within `minDistance` (10 m) of the previously saved
 ///   point, or if its accuracy is worse than `maxAccuracy`. With the drift guard on, a fix
 ///   must also have moved further than its own uncertainty.
@@ -27,6 +29,8 @@ final class LocationRecorder: NSObject, ObservableObject {
         var saved = 0
         var skippedTooClose = 0
         var skippedPoorAccuracy = 0
+        /// Extra points saved at sharp turns.
+        var atTurns = 0
     }
 
     @Published private(set) var isRecording = false
@@ -62,6 +66,7 @@ final class LocationRecorder: NSObject, ObservableObject {
     var currentRecording: URL? { sessionURL }
     private var segment = 0
     private var lastSaved: CLLocation?
+    private var turns = TurnDetector()
     private var latestFix: CLLocation?
     private var windowBest: CLLocation?
     private var nextAttemptAt = Date.distantPast
@@ -105,8 +110,10 @@ final class LocationRecorder: NSObject, ObservableObject {
 
     func stop() {
         guard isRecording else { return }
+        noteBattery(force: true)
         stopRestWatch()
         stopUpdates()
+        UIDevice.current.isBatteryMonitoringEnabled = false
         if let url = sessionURL { log.save(for: url) }
         UserDefaults.standard.removeObject(forKey: Key.heartbeat)
         gapAwaitingPoint = nil
@@ -138,6 +145,25 @@ final class LocationRecorder: NSObject, ObservableObject {
         } else {
             resumeIfNeeded()
         }
+    }
+
+    /// Set when Control Center's (or a shortcut's) Stop asks; the STOP button's question is
+    /// shown, so a stray tap can't end a recording.
+    @Published var stopRequested = false
+    /// Bumped whenever a control was used, so the app shows the Record tab.
+    @Published private(set) var controlRevision = 0
+
+    func requestStop() {
+        if isRecording { stopRequested = true } else { message = "Waytrace isn't recording." }
+    }
+
+    func controlUsed() {
+        controlRevision += 1
+    }
+
+    /// Recordings were added or deleted elsewhere; lists reload.
+    func libraryChanged() {
+        libraryRevision += 1
     }
 
     /// Re-runs the motion lookup for a finished recording (Core Motion keeps 7 days).
@@ -180,6 +206,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         segment = (existing.last?.segment ?? -1) + 1
         // The distance rule still applies against the last point saved before the interruption.
         lastSaved = existing.last.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        turns.reset()
         policy = SamplingPolicy.current
         startUpdates()
         isRecording = true
@@ -255,6 +282,7 @@ final class LocationRecorder: NSObject, ObservableObject {
     private func beginRecording() {
         policy = SamplingPolicy.current
         lastSaved = nil
+        turns.reset()
         guard openSession(start: Date()) else { return }
         startUpdates()
         isRecording = true
@@ -296,8 +324,10 @@ final class LocationRecorder: NSObject, ObservableObject {
               !Calendar.current.isDate(date, inSameDayAs: start) else { return }
         let finished = sessionURL
         let finishedDays = DailyPlan.days(of: points)
+        noteBattery(force: true)        // also saves the finished day's log
         closeWriter()
         openSession(start: Calendar.current.startOfDay(for: date))
+        noteBattery(force: true)
         if let finished { annotateActivity(of: finished, thenMapDays: finishedDays) }
     }
 
@@ -328,6 +358,8 @@ final class LocationRecorder: NSObject, ObservableObject {
 
     private func startRestWatch() {
         stopRestWatch()
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        noteBattery(force: true)
         tickTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
             MainActor.assumeIsolated { LocationRecorder.shared.tick() }
         }
@@ -358,8 +390,19 @@ final class LocationRecorder: NSObject, ObservableObject {
     private func tick() {
         guard isRecording else { return }
         writeHeartbeat()
+        noteBattery()
         if let e = stillness?.tick(Date()) { handle(e) }
         Backup.shared.recordingTick()
+    }
+
+    /// Notes the battery in the recording's log (when it changed, or `force`), for the
+    /// Battery section of the recording's details.
+    private func noteBattery(force: Bool = false) {
+        let d = UIDevice.current
+        let sample = RecordingLog.BatterySample(time: Date(), level: Double(d.batteryLevel),
+                                                charging: d.batteryState == .charging || d.batteryState == .full,
+                                                lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        if log.noteBattery(sample, force: force), let url = sessionURL { log.save(for: url) }
     }
 
     private func motionReading(_ r: MotionReading, at t: Date) {
@@ -377,6 +420,7 @@ final class LocationRecorder: NSObject, ObservableObject {
             setCoarse()
             restingSince = Date()
             log.restStarted(at: Date())
+            noteBattery(force: true)
             if let url = sessionURL { log.save(for: url) }
             restNote = "GPS resting since \(clock): you've stayed in one place."
             startRestRegion()
@@ -394,8 +438,10 @@ final class LocationRecorder: NSObject, ObservableObject {
             }
             restingSince = nil
             log.restEnded(at: Date(), wokeBy: reason)
+            noteBattery(force: true)
             if let url = sessionURL { log.save(for: url) }
             stopRestRegion()
+            turns.reset()
             // Start sampling afresh: the next good fix is saved straight away.
             updatesStartedAt = Date()
             nextAttemptAt = .distantPast
@@ -505,7 +551,17 @@ final class LocationRecorder: NSObject, ObservableObject {
                location.horizontalAccuracy <= (windowBest?.horizontalAccuracy ?? .infinity) {
                 windowBest = location
             }
-            guard location.timestamp >= nextAttemptAt else { continue }
+            // Between attempts, a sharp turn is saved straight away.
+            let turned = turns.isTurn(course: TurnDetector.usableCourse(course: location.course,
+                                                                        courseAccuracy: location.courseAccuracy,
+                                                                        speed: location.speed))
+            guard location.timestamp >= nextAttemptAt else {
+                if turned, attempt(location, atTurn: true) {
+                    nextAttemptAt = location.timestamp.addingTimeInterval(policy.interval)
+                    windowBest = nil
+                }
+                continue
+            }
 
             var candidate = location
             if let best = windowBest,
@@ -524,33 +580,40 @@ final class LocationRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func attempt(_ location: CLLocation) {
-        stats.attempts += 1
+    /// One save attempt. A turn point (`atTurn`) isn't counted as an attempt; it only adds a
+    /// point when it passes the same rules. Returns whether the point was saved.
+    @discardableResult
+    private func attempt(_ location: CLLocation, atTurn: Bool = false) -> Bool {
+        if !atTurn { stats.attempts += 1 }
         if policy.maxAccuracy > 0, location.horizontalAccuracy > policy.maxAccuracy {
-            stats.skippedPoorAccuracy += 1
-            return
+            if !atTurn { stats.skippedPoorAccuracy += 1 }
+            return false
         }
         if let last = lastSaved,
            location.distance(from: last) <= policy.requiredMove(forAccuracy: location.horizontalAccuracy) {
-            stats.skippedTooClose += 1
-            return
+            if !atTurn { stats.skippedTooClose += 1 }
+            return false
         }
         rollOverIfNeeded(for: location.timestamp)
         guard let writer else {
             message = "No open track file; press STOP and RECORD again."
-            return
+            return false
         }
         let point = TrackPoint(location: location, segment: segment)
         do {
             try writer.append(point)
         } catch {
             message = "Couldn't save a point: \(error.localizedDescription)"
-            return
+            return false
         }
         points.append(point)
         lastSaved = location
+        turns.saved(course: TurnDetector.usableCourse(course: location.course, courseAccuracy: location.courseAccuracy,
+                                                      speed: location.speed))
         stats.saved += 1
+        if atTurn { stats.atTurns += 1 }
         completeGap(with: point)
+        return true
     }
 
     private func authorizationChanged() {

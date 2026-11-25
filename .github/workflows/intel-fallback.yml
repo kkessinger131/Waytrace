@@ -1,0 +1,39 @@
+name: Intel fallback
+
+# When an Apple Silicon build is cancelled because GitHub had no Mac free for it ("The job
+# was not acquired by Runner"), start the same build on an Intel Mac. A build that ran and
+# failed, one cancelled after a Mac picked it up, or one that was already on Intel is left
+# alone. Runs on a small Linux machine, which GitHub almost always has free.
+on:
+  workflow_run:
+    workflows: ["Build Waytrace (.ipa)"]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry-on-intel:
+    if: github.event.workflow_run.conclusion == 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Start the Intel build if no Mac ever picked the job up
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          jobs=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --jq '.jobs')
+          echo "$jobs" | jq -c '.[] | {name, conclusion, runner_name, labels, steps: (.steps | length)}'
+          never_started=$(echo "$jobs" | jq '[.[] | select(.conclusion == "cancelled"
+            and (.runner_name // "") == "" and (.steps | length) == 0
+            and ((.labels | index("macos-26-intel")) == null))] | length')
+          if [ "$never_started" -gt 0 ]; then
+            echo "No Apple Silicon Mac picked up run $RUN_ID; starting the build on an Intel Mac."
+            gh workflow run build-ipa.yml --repo "$REPO" --ref "$BRANCH" -f runner=macos-26-intel
+          else
+            echo "Run $RUN_ID was cancelled after it started, or was already on Intel: nothing to do."
+          fi

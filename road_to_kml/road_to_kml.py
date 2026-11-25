@@ -34,6 +34,7 @@ import csv
 import heapq
 import importlib.util
 import math
+import os
 import sys
 import time
 from collections import defaultdict, namedtuple
@@ -2101,9 +2102,43 @@ def summarize(geometry, road_name: str):
 
 SOURCE_LABELS = {"osm": "OSM", "tiger": "TIGER/Line"}
 
-# Longest default filename (including the source tag and ".kml"). The source
-# tag (_osm, _tiger, _osm_tiger) is always kept; the rest is shortened to fit.
+# Longest output filename, ".kml" and any "_2" included. The source tag (_osm,
+# _tiger, _osm_tiger) of a default name is always kept; the rest is shortened to
+# fit. Windows allows 255 characters in a file name and 260 in a whole path, so
+# 120 leaves room for the folder.
 MAX_FILENAME_LEN = 120
+WINDOWS_MAX_PATH = 259      # MAX_PATH (260) less the terminating NUL
+
+
+def unique_output_path(path: str, is_windows: bool = None) -> str:
+    """
+    Where to write an output so no earlier file is ever replaced: `path` itself
+    if nothing is there, otherwise the same name with _2, _3, ... before the
+    extension. The name, any _N included, is kept to MAX_FILENAME_LEN characters
+    (and on Windows the whole path to WINDOWS_MAX_PATH) by shortening the part
+    before the extension.
+    """
+    if is_windows is None:
+        is_windows = os.name == "nt"
+    folder, name = os.path.split(path)
+    stem, ext = os.path.splitext(name)
+    limit = MAX_FILENAME_LEN
+    if is_windows:
+        room = WINDOWS_MAX_PATH - len(os.path.join(os.path.abspath(folder or "."), ""))
+        limit = max(len(ext) + 8, min(limit, room))
+
+    def fit(tail):
+        budget = limit - len(tail) - len(ext)
+        cut = stem if len(stem) <= budget else (stem[:max(budget, 1)].rstrip("._- ") or stem[:1])
+        return os.path.join(folder, cut + tail + ext)
+
+    candidate, n = fit(""), 2
+    while os.path.exists(candidate):
+        candidate, n = fit(f"_{n}"), n + 1
+    if os.path.basename(candidate) != name:
+        why = "is already in the folder" if os.path.exists(fit("")) else "is too long for Windows"
+        print(f"  Note: {name} {why}; saving as {os.path.basename(candidate)} instead.")
+    return candidate
 
 
 def _parse_sources(tokens: list[str], parser) -> tuple[list[str], str]:
@@ -2189,7 +2224,9 @@ def _osm_lines_wgs84(ways) -> list:
 
 
 def _finish_output(layers, args, road_label, place, source_used, output):
-    """Outlines (if wanted), buffer, write the KML, summarize."""
+    """Outlines (if wanted), buffer, write the KML, summarize. Never replaces an
+    existing file (see unique_output_path); returns the name actually written."""
+    output = unique_output_path(output)
     pins = []
     road_poly_wgs84 = build_combined_polygon(
         layers,
@@ -2258,7 +2295,8 @@ def build_parser():
                         help="With --track: which trips to map (drive, walk, bike, other = mode unknown). "
                              "Flights, trains and ferries are always skipped. Default: all four.")
     parser.add_argument("--output", default="",     help='Output .kml filename (default: auto-generated, ending in '
-                                                          '_osm, _tiger or _osm_tiger)')
+                                                          '_osm, _tiger or _osm_tiger). An existing file is never '
+                                                          'replaced: _2, _3, ... is added instead')
     parser.add_argument("--notes",  default="",     help="Text added to the KML description")
     parser.add_argument("--lanes",  type=int, default=0,
                         help="Override/add extra lanes to default width estimate")

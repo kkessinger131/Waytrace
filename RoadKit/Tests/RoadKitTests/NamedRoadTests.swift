@@ -69,6 +69,29 @@ final class PlanningTests: EngineTestCase {
         XCTAssertTrue(long.hasSuffix("_osm_tiger.kml"))
     }
 
+    func testOutputsAreNeverReplaced() {
+        var there: Set<String> = []
+        let exists = { (n: String) in there.contains(n) }
+        XCTAssertEqual(Planning.uniqueOutput("road_osm.kml", exists: exists).name, "road_osm.kml")
+        XCTAssertNil(Planning.uniqueOutput("road_osm.kml", exists: exists).note)
+        there = ["road_osm.kml"]
+        let second = Planning.uniqueOutput("road_osm.kml", exists: exists)
+        XCTAssertEqual(second.name, "road_osm_2.kml")
+        XCTAssertEqual(second.note, "  Note: road_osm.kml is already in the folder; saving as road_osm_2.kml instead.")
+        there.insert("road_osm_2.kml")
+        XCTAssertEqual(Planning.uniqueOutput("road_osm.kml", exists: exists).name, "road_osm_3.kml")
+        XCTAssertEqual(Planning.uniqueOutput("/tmp/out/b.kml", exists: { $0 == "/tmp/out/b.kml" }).name, "/tmp/out/b_2.kml")
+        // A name at the limit is shortened so the _N still fits; a longer one is cut even when free.
+        let full = String(repeating: "x", count: Planning.maxFilenameLength - 4) + ".kml"
+        let cut = Planning.uniqueOutput(full, exists: { $0 == full }).name
+        XCTAssertEqual(cut.count, Planning.maxFilenameLength)
+        XCTAssertTrue(cut.hasSuffix("_2.kml"))
+        XCTAssertEqual(Planning.uniqueOutput(String(repeating: "y", count: 300) + ".kml", exists: { _ in false }).name.count,
+                       Planning.maxFilenameLength)
+        XCTAssertEqual(Planning.splitExt(".kml").ext, "")
+        XCTAssertEqual(Planning.splitExt("a.b.kml").stem, "a.b")
+    }
+
     func testOffsetBuffer() throws {
         let line = try Geometry.lineString([XY(0, 0), XY(100, 0)])        // heading east; left = north
         let band = try RoadGeom.offsetBuffer(line, 8, -5)                   // sidewalk 5..8 m left

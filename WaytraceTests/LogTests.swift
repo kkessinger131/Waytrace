@@ -176,3 +176,63 @@ final class DailyPhotoTests: XCTestCase {
         XCTAssertNil(Exporter.addingFolder(folder, to: "not kml"))
     }
 }
+
+final class BatteryLogTests: XCTestCase {
+    private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+    private func s(_ minutes: Double, _ level: Double, charging: Bool = false, low: Bool = false) -> RecordingLog.BatterySample {
+        RecordingLog.BatterySample(time: t0.addingTimeInterval(minutes * 60), level: level, charging: charging, lowPower: low)
+    }
+
+    func testOnlyChangesAreNoted() {
+        var log = RecordingLog()
+        XCTAssertTrue(log.noteBattery(s(0, 0.9)))
+        XCTAssertFalse(log.noteBattery(s(1, 0.9)), "nothing changed")
+        XCTAssertTrue(log.noteBattery(s(2, 0.9), force: true), "start, stop and rests always count")
+        XCTAssertTrue(log.noteBattery(s(3, 0.85)))
+        XCTAssertTrue(log.noteBattery(s(4, 0.85, low: true)), "Low Power Mode turned on")
+        XCTAssertFalse(log.noteBattery(s(5, -1)), "level unknown")
+        XCTAssertEqual(log.battery.count, 4)
+    }
+
+    func testOldLogsStillLoad() throws {
+        let old = #"{"gaps":[],"rests":[{"from":1800000000,"to":1800000600,"wokeBy":"12 steps"}]}"#
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .secondsSince1970
+        let log = try d.decode(RecordingLog.self, from: Data(old.utf8))
+        XCTAssertEqual(log.rests.count, 1)
+        XCTAssertEqual(log.battery, [])
+        XCTAssertNil(log.batteryReport, "no samples, no report")
+    }
+
+    func testReport() throws {
+        var log = RecordingLog()
+        // 0–60 min GPS on: 100% -> 95%. 60–120 resting: 95% -> 94%. 120–150 on the charger.
+        // 150–210 on: 99% -> 95%.
+        log.rests = [RecordingLog.Rest(from: t0.addingTimeInterval(3600), to: t0.addingTimeInterval(7200), wokeBy: "motion: walking")]
+        for x in [s(0, 1.0), s(60, 0.95), s(120, 0.94), s(121, 0.94, charging: true), s(150, 0.99, charging: true),
+                  s(151, 0.99), s(210, 0.95, low: true)] {
+            log.noteBattery(x, force: true)
+        }
+        let r = try XCTUnwrap(log.batteryReport)
+        XCTAssertEqual(r.used, 0.05 + 0.01 + 0.04, accuracy: 1e-9)
+        // The minutes plugging in and unplugging count as charger time.
+        XCTAssertEqual(r.onBattery, (60 + 60 + 59) * 60, accuracy: 1e-6)
+        XCTAssertEqual(r.charging, (1 + 29 + 1) * 60, accuracy: 1e-6)
+        XCTAssertEqual(r.perHour!, 0.10 / (179.0 / 60), accuracy: 1e-9)
+        XCTAssertEqual(r.perHourResting!, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(r.perHourActive!, 0.09 / (119.0 / 60), accuracy: 1e-9)
+        XCTAssertTrue(r.lowPower)
+        XCTAssertEqual(r.first, 1.0)
+        XCTAssertEqual(r.last, 0.95)
+    }
+
+    func testShortRecordingsGiveNoRates() throws {
+        var log = RecordingLog()
+        log.noteBattery(s(0, 0.8))
+        log.noteBattery(s(20, 0.75))
+        let r = try XCTUnwrap(log.batteryReport)
+        XCTAssertEqual(r.used, 0.05, accuracy: 1e-9)
+        XCTAssertNil(r.perHour, "under half an hour")
+        XCTAssertNil(r.perHourResting)
+    }
+}

@@ -151,6 +151,12 @@ private struct ControlBar: View {
             }
             .tint(.gray)
             .disabled(!recorder.isRecording)
+            .onChange(of: recorder.stopRequested) { _, asked in
+                if asked { confirmStop = true; recorder.stopRequested = false }
+            }
+            .onAppear {
+                if recorder.stopRequested { confirmStop = true; recorder.stopRequested = false }
+            }
             .confirmationDialog("Stop recording?", isPresented: $confirmStop, titleVisibility: .visible) {
                 Button("Stop recording", role: .destructive) { recorder.stop() }
                 Button("Keep recording", role: .cancel) {}
@@ -205,7 +211,7 @@ private struct StatusView: View {
             .font(.headline)
 
             if recorder.isRecording || recorder.stats.attempts > 0 {
-                Text("\(recorder.stats.attempts) attempts · \(recorder.stats.skippedTooClose) within \(Int(SamplingPolicy.current.minDistance)) m · \(recorder.stats.skippedPoorAccuracy) low accuracy")
+                Text("\(recorder.stats.attempts) attempts · \(recorder.stats.skippedTooClose) within \(Int(SamplingPolicy.current.minDistance)) m · \(recorder.stats.skippedPoorAccuracy) low accuracy · \(recorder.stats.atTurns) at turns")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

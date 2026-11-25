@@ -34,7 +34,7 @@ enum SourceChoice: String, CaseIterable, Identifiable, Codable {
     }
     func detail(track: Bool) -> String? {
         switch self {
-        case .auto: return track ? "TIGER/Line steps in for stretches OSM couldn't match and for trips whose OSM data couldn't be downloaded."
+        case .auto: return track ? "For stretches OSM couldn't match, TIGER/Line is used instead; TIGER/Line is also used for trips whose OSM data couldn't be downloaded."
                                  : "Per county, so TIGER/Line fallback needs counties (DC excepted)."
         case .tiger: return track ? "The counties you passed through are found automatically, and each one's road file is downloaded."
                                   : "Needs counties, except in DC."

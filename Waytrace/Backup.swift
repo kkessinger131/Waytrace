@@ -113,6 +113,53 @@ final class Backup: ObservableObject {
         return (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
     }
 
+    /// What "Delete backed-up recordings" would do: the recordings that can go (see Cleanup),
+    /// and the names of older ones whose files aren't confirmed in the backup yet. nil if
+    /// there's no backup folder or it can't be reached.
+    func cleanupPlan(now: Date = Date()) -> (delete: [TrackSession], notBackedUp: [String])? {
+        guard isSet, let folder = resolve() else { return nil }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        let fm = FileManager.default
+        let dir = folder.appendingPathComponent("Recordings", isDirectory: true)
+        guard fm.fileExists(atPath: dir.path) else { return ([], []) }
+        let keys: [URLResourceKey] = [.fileSizeKey, .ubiquitousItemIsUploadedKey, .ubiquitousItemDownloadingStatusKey]
+        var backup: [String: Cleanup.Backed] = [:]
+        for url in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)) ?? [] {
+            let v = try? url.resourceValues(forKeys: Set(keys))
+            let b = Cleanup.backed(name: url.lastPathComponent, size: v?.fileSize,
+                                   notDownloaded: v?.ubiquitousItemDownloadingStatus == .notDownloaded,
+                                   uploaded: v?.ubiquitousItemIsUploaded)
+            backup[b.key] = b.value
+        }
+        let store = TrackStore.shared
+        let recorder = LocationRecorder.shared
+        let active = recorder.isRecording ? recorder.sessionName : nil
+        var delete: [TrackSession] = [], missing: [String] = []
+        for s in store.sessions() {
+            var files: [String: Int] = [:]
+            for url in [s.url, RecordingKML.url(for: s.url)] {
+                if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize { files[url.lastPathComponent] = size }
+            }
+            let modified = (try? s.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            let ended = store.loadPoints(from: s.url).last?.time ?? modified ?? now
+            switch Cleanup.check(.init(name: s.name, ended: ended, files: files), backup: backup, active: active, now: now) {
+            case .delete: delete.append(s)
+            case .notBackedUp: missing.append(s.name)
+            case .tooNew, .recording: break
+            }
+        }
+        return (delete, missing)
+    }
+
+    /// Deletes those recordings from the phone (their backup copies stay).
+    func deleteBackedUp(_ sessions: [TrackSession]) {
+        var n = 0
+        for s in sessions where (try? TrackStore.shared.delete(s)) != nil { n += 1 }
+        LocationRecorder.shared.libraryChanged()
+        note("Deleted \(n) backed-up recording(s) from this iPhone; the copies in \(folderName ?? "the backup folder") stay.")
+    }
+
     private func note(_ s: String) {
         lastResult = s
         UserDefaults.standard.set(s, forKey: Key.result)

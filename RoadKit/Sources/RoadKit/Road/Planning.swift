@@ -141,6 +141,42 @@ public enum Planning {
         return stem + suffix
     }
 
+    /// os.path.splitext for a file name: leading dots aren't an extension (".kml" -> (".kml", "")).
+    static func splitExt(_ name: String) -> (stem: String, ext: String) {
+        guard let dot = name.lastIndex(of: "."), name[..<dot].contains(where: { $0 != "." }) else { return (name, "") }
+        return (String(name[..<dot]), String(name[dot...]))
+    }
+
+    /// unique_output_path (not on Windows): where to write so no earlier file is replaced.
+    /// `output` itself if `exists` says nothing is there, otherwise the same name with _2, _3,
+    /// ... before the extension, the name (any _N included) kept to maxFilenameLength
+    /// characters. Returns the name and the note to log when it differs.
+    public static func uniqueOutput(_ output: String, exists: (String) -> Bool) -> (name: String, note: String?) {
+        let slash = output.lastIndex(of: "/")
+        let folder = slash.map { String(output[...$0]) } ?? ""
+        let name = slash.map { String(output[output.index(after: $0)...]) } ?? output
+        let (stem, ext) = splitExt(name)
+        let len = { (s: String) in s.unicodeScalars.count }
+        func fit(_ tail: String) -> String {
+            let budget = maxFilenameLength - len(tail) - len(ext)
+            var cut = stem
+            if len(stem) > budget {
+                cut = String(String.UnicodeScalarView(stem.unicodeScalars.prefix(max(budget, 1)))).trimmingTrailing(in: "._- ")
+                if cut.isEmpty { cut = String(String.UnicodeScalarView(stem.unicodeScalars.prefix(1))) }
+            }
+            return folder + cut + tail + ext
+        }
+        var candidate = fit(""), n = 2
+        while exists(candidate) {
+            candidate = fit("_\(n)")
+            n += 1
+        }
+        let chosen = String(candidate[(candidate.lastIndex(of: "/").map { candidate.index(after: $0) } ?? candidate.startIndex)...])
+        guard chosen != name else { return (candidate, nil) }
+        let why = exists(fit("")) ? "is already in the folder" : "is too long for Windows"
+        return (candidate, "  Note: \(name) \(why); saving as \(chosen) instead.")
+    }
+
     /// _parse_sources: ["xml"] + path, ["auto"], or a non-empty subset of ["osm", "tiger"].
     public static func parseSources(_ tokens: [String]) throws -> (modes: [String], xml: String) {
         if let first = tokens.first, Py.strip(first).lowercased() == "xml" {
