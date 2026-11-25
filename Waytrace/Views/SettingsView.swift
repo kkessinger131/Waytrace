@@ -196,7 +196,7 @@ struct SettingsView: View {
     }
 
     private var cleanupMessage: String {
-        "These ended 7 or more days ago, and their files (CSV and KML) are in \(backup.folderName ?? "the backup folder") › Recordings. They're deleted from this iPhone only; the backup copies stay. Each one's log (gaps, GPS rests, battery) isn't backed up and goes with it; the KML still shows the gaps."
+        "These ended 7 or more days ago, and their files (CSV, KML and log) are in \(backup.folderName ?? "the backup folder") › Recordings. They're deleted from this iPhone only; the backup copies stay."
     }
 
     private var permissionText: String {

@@ -158,6 +158,7 @@ jobs:
             if [ "$ID" = "$APP_ID" ]; then echo "::error::$(basename "$f") has the app's bundle ID"; exit 1; fi
           done
           # App extensions (the Control Center buttons) need an ID that starts with the app's.
+          ls Payload/Waytrace.app/PlugIns/WaytraceControls.appex >/dev/null || { echo "::error::The Control Center extension (WaytraceControls.appex) isn't in the app."; exit 1; }
           for x in Payload/Waytrace.app/PlugIns/*.appex; do
             [ -e "$x" ] || continue
             ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$x/Info.plist")

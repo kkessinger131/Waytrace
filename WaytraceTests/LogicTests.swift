@@ -431,6 +431,24 @@ final class CleanupTests: XCTestCase {
         XCTAssertEqual(Cleanup.check(rec("z", daysAgo: 30), backup: backup, active: nil, now: now), .notBackedUp("z.csv"))
     }
 
+    func testWhichFilesAreBackedUp() {
+        for name in ["2026-11-08_09-12-44.csv", "2026-11-08_09-12-44.kml", "2026-11-08_09-12-44.log.json",
+                     "roads_2026-11-08_09-12-44.KML"] {
+            XCTAssertTrue(Cleanup.isBackedUp(name), name)
+        }
+        for name in ["Inputs", "notes.json", "2026-11-08.gpx", ".DS_Store"] {
+            XCTAssertFalse(Cleanup.isBackedUp(name), name)
+        }
+        let withLog = Cleanup.Local(name: "f", ended: now.addingTimeInterval(-8 * 86400),
+                                    files: ["f.csv": 1000, "f.kml": 5000, "f.log.json": 300])
+        let backup: [String: Cleanup.Backed] = ["f.csv": .init(size: 1000), "f.kml": .init(size: 5000)]
+        XCTAssertEqual(Cleanup.check(withLog, backup: backup, active: nil, now: now), .notBackedUp("f.log.json"),
+                       "a log not in the backup yet keeps the recording")
+        var all = backup
+        all["f.log.json"] = .init(size: 300)
+        XCTAssertEqual(Cleanup.check(withLog, backup: all, active: nil, now: now), .delete)
+    }
+
     func testReadingTheBackupListing() {
         let p = Cleanup.backed(name: ".2026-11-08_09-12-44.csv.icloud", size: 120, notDownloaded: false, uploaded: nil)
         XCTAssertEqual(p.key, "2026-11-08_09-12-44.csv")

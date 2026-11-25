@@ -1,10 +1,17 @@
 import Foundation
 
 /// Which recordings "Delete backed-up recordings" may take off the phone: ones that ended at
-/// least a week ago, aren't being recorded, and whose files (the CSV, and its KML if it has
-/// one) are all confirmed in the backup's Recordings folder.
+/// least a week ago, aren't being recorded, and whose files (the CSV, and its KML and log if
+/// it has them) are all confirmed in the backup's Recordings folder.
 enum Cleanup {
     static let minAge: TimeInterval = 7 * 86400
+
+    /// The files the backup copies: recordings (.csv), line and road KML (.kml), and each
+    /// recording's log of gaps, GPS rests and battery (<name>.log.json).
+    static func isBackedUp(_ fileName: String) -> Bool {
+        let lower = fileName.lowercased()
+        return lower.hasSuffix(".csv") || lower.hasSuffix(".kml") || lower.hasSuffix(".log.json")
+    }
 
     /// A recording on the phone: its name, when it ended, and its files (name -> size).
     struct Local: Equatable, Sendable {

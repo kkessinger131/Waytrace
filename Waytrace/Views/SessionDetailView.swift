@@ -179,11 +179,11 @@ struct SessionDetailView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            .chartYScale(domain: 0...100)
+            .chartYScale(domain: 0.0...100.0)
             .chartYAxis {
-                AxisMarks(values: [0, 50, 100]) { v in
+                AxisMarks(values: [0.0, 50.0, 100.0]) { v in
                     AxisGridLine()
-                    AxisValueLabel { Text("\(v.as(Int.self) ?? 0)%") }
+                    AxisValueLabel { Text("\(Int(v.as(Double.self) ?? 0))%") }
                 }
             }
             .frame(height: 140)

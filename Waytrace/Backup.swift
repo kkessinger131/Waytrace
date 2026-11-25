@@ -6,6 +6,7 @@ import Combine
 ///
 ///   <folder>/Recordings/2026-11-08_09-12-44.csv   the raw recordings (Tracks)
 ///   <folder>/Recordings/2026-11-08_09-12-44.kml   each finished recording's line, points and photos
+///   <folder>/Recordings/2026-11-08_09-12-44.log.json   its gaps, GPS rests and battery log
 ///   <folder>/Road KML/roads_2026-11-08_09-12-44.kml   every KML Road to KML made
 ///
 /// Copies are made every 15 minutes while recording, when a recording stops, after each Road
@@ -138,7 +139,7 @@ final class Backup: ObservableObject {
         var delete: [TrackSession] = [], missing: [String] = []
         for s in store.sessions() {
             var files: [String: Int] = [:]
-            for url in [s.url, RecordingKML.url(for: s.url)] {
+            for url in [s.url, RecordingKML.url(for: s.url), RecordingLog.url(for: s.url)] {
                 if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize { files[url.lastPathComponent] = size }
             }
             let modified = (try? s.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
@@ -177,7 +178,7 @@ final class Backup: ObservableObject {
         return url
     }
 
-    /// Copies new and changed .csv/.kml files. Runs off the main thread.
+    /// Copies new and changed .csv, .kml and .log.json files. Runs off the main thread.
     nonisolated static func copyChanged(_ sources: [(URL, String)], into folder: URL) -> String {
         let fm = FileManager.default
         let scoped = folder.startAccessingSecurityScopedResource()
@@ -188,7 +189,7 @@ final class Backup: ObservableObject {
         for (dir, name) in sources {
             let dest = folder.appendingPathComponent(name, isDirectory: true)
             let files = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)) ?? [])
-                .filter { ["csv", "kml"].contains($0.pathExtension.lowercased()) }
+                .filter { Cleanup.isBackedUp($0.lastPathComponent) }
             guard !files.isEmpty else { continue }
             let coordinator = NSFileCoordinator()
             var coordError: NSError?

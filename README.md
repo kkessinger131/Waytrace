@@ -255,18 +255,21 @@ points on the line. It's made when you press STOP (or at midnight, with "Start
 a new file each day"), once the walking/driving labels are filled in, and made
 again if you fill the labels in later. **Back up now** also makes one for any
 finished recording that doesn't have one yet, such as those recorded before
-this was added. Deleting a recording on the phone deletes its KML there too,
-but not the backup copies.
+this was added.
+
+Each recording's log goes there too (`2026-11-08_09-12-44.log.json`): its gaps,
+GPS rests and battery levels (see below), copied whenever it changes. Deleting
+a recording on the phone deletes its KML and log there too, but not the backup
+copies.
 
 **Delete backed-up recordings…** (Settings › Backup) frees space on the phone.
-It deletes only recordings that ended **7 or more days ago** and whose CSV and
-KML are confirmed in `Recordings/`: present, the same size, and uploaded by
+It deletes only recordings that ended **7 or more days ago** and whose CSV, KML
+and log are confirmed in `Recordings/`: present, the same size, and uploaded by
 iCloud (files iCloud keeps only in the cloud count as uploaded). It lists how
 many it will delete and asks first; a recording in progress is never touched.
 Older recordings that aren't fully in the backup yet are counted, so you can
-press **Back up now** and try again. A recording's log (gaps, GPS rests,
-battery) isn't backed up and is deleted with it; the backed-up KML still shows
-the gaps.
+press **Back up now** and try again. (Recordings made before logs were backed
+up count as not fully backed up until the next backup copies their logs.)
 
 ## Gaps, battery and the battery saver log
 
